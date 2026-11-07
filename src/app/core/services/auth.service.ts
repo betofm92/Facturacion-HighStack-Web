@@ -72,3 +72,4 @@ export class AuthService {
     void this.router.navigate(['/login']);
   }
 }
+

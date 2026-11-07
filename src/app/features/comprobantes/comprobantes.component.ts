@@ -442,3 +442,4 @@ export class ComprobantesComponent implements OnInit {
     window.open(url, '_blank');
   }
 }
+

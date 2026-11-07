@@ -298,3 +298,4 @@ export class ShellLayoutComponent {
     void this.router.navigate(['/emitir']);
   }
 }
+

@@ -154,3 +154,4 @@ export interface SriVerifyResponse {
   estadoLocal?: string;
   sincronizado: boolean;
 }
+

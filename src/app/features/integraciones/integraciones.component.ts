@@ -137,3 +137,4 @@ export class IntegracionesComponent implements OnInit {
     this.toast.info('Secreto HMAC copiado al portapapeles');
   }
 }
+

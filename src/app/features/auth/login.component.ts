@@ -206,3 +206,4 @@ export class LoginComponent {
     void this.router.navigate(['/dashboard']);
   }
 }
+
