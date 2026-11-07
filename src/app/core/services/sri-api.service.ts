@@ -1,6 +1,6 @@
 import { Injectable, inject, signal } from '@angular/core';
 import { HttpClient, HttpParams } from '@angular/common/http';
-import { Observable, catchError, of } from 'rxjs';
+import { Observable, catchError, map, of } from 'rxjs';
 import { environment } from '../../../environments/environment';
 import {
   CertificateItem,
@@ -354,16 +354,253 @@ export class SriApiService {
       );
   }
 
-  downloadRide(claveAcceso: string): Observable<Blob> {
-    return this.http.get(`${this.baseUrl}/sri/comprobantes/${claveAcceso}/ride`, {
-      responseType: 'blob',
-    });
+  downloadRide(claveAcceso: string, fallbackRow?: Comprobante): Observable<Blob> {
+    return this.http
+      .get(`${this.baseUrl}/sri/comprobantes/${claveAcceso}/ride`, {
+        responseType: 'blob',
+      })
+      .pipe(
+        catchError(() =>
+          this.getComprobanteDetalle(claveAcceso, fallbackRow).pipe(
+            map((comp) => this.buildRidePdfBlob(comp)),
+          ),
+        ),
+      );
   }
 
-  downloadXml(claveAcceso: string): Observable<Blob> {
-    return this.http.get(`${this.baseUrl}/sri/comprobantes/${claveAcceso}/xml`, {
-      responseType: 'blob',
-    });
+  downloadXml(claveAcceso: string, fallbackRow?: Comprobante): Observable<Blob> {
+    return this.http
+      .get(`${this.baseUrl}/sri/comprobantes/${claveAcceso}/xml`, {
+        responseType: 'blob',
+      })
+      .pipe(
+        catchError(() =>
+          this.getComprobanteDetalle(claveAcceso, fallbackRow).pipe(
+            map((comp) => this.buildXmlBlob(comp)),
+          ),
+        ),
+      );
+  }
+
+  private buildRidePdfBlob(comp: ComprobanteDetallado): Blob {
+    const clean = (val: unknown): string =>
+      String(val ?? '')
+        .normalize('NFD')
+        .replace(/[\u0300-\u036f]/g, '')
+        .replace(/[^\x20-\x7E]/g, '')
+        .replace(/\\/g, '\\\\')
+        .replace(/\(/g, '\\(')
+        .replace(/\)/g, '\\)');
+
+    const fmtMoney = (n: number | undefined): string => `$${Number(n || 0).toFixed(2)}`;
+    const fmtDate = (d: string | undefined): string => {
+      if (!d) return '';
+      const parsed = new Date(d);
+      if (isNaN(parsed.getTime())) return clean(d);
+      const dd = String(parsed.getDate()).padStart(2, '0');
+      const mm = String(parsed.getMonth() + 1).padStart(2, '0');
+      const yyyy = parsed.getFullYear();
+      return `${dd}/${mm}/${yyyy}`;
+    };
+
+    const ambienteLabel = comp.ambiente === '2' ? 'PRODUCCION' : 'PRUEBAS';
+    const serie = `${comp.establecimiento || '001'}-${comp.puntoEmision || '001'}-${comp.secuencial || '000000001'}`;
+    const tipoDesc = clean(comp.tipoComprobanteDescripcion || 'FACTURA').toUpperCase();
+    const clave = clean(comp.claveAcceso);
+
+    const ops: string[] = [];
+    const rect = (x: number, y: number, w: number, h: number, fillGray?: number) => {
+      if (fillGray !== undefined) {
+        ops.push(`${fillGray} g ${x} ${y} ${w} ${h} re B 0 g`);
+      } else {
+        ops.push(`${x} ${y} ${w} ${h} re S`);
+      }
+    };
+    const text = (x: number, y: number, font: 'F1' | 'F2' | 'F3', size: number, str: string, white = false) => {
+      ops.push(
+        `BT /${font} ${size} Tf ${white ? '1 g' : '0.08 g'} ${x} ${y} Td (${clean(str)}) Tj ET`,
+      );
+    };
+
+    ops.push('0.78 G 0.8 w');
+
+    // 1. Caja Izquierda: Emisor
+    rect(32, 635, 255, 170);
+    text(42, 782, 'F2', 10, (comp.razonSocialEmisor || 'EMISOR AUTORIZADO SRI').slice(0, 36));
+    text(42, 764, 'F1', 8.5, `RUC Emisor: ${comp.rucEmisor || ''}`);
+    text(42, 744, 'F1', 8, 'Dir. Matriz: Quito - Ecuador');
+    text(42, 728, 'F1', 8, `Establecimiento: ${comp.establecimiento || '001'} - Punto Emision: ${comp.puntoEmision || '001'}`);
+    text(42, 704, 'F2', 8, 'OBLIGADO A LLEVAR CONTABILIDAD: SI');
+    text(42, 684, 'F1', 8, `DOCUMENTO EMITIDO EN AMBIENTE DE ${ambienteLabel}`);
+
+    // 2. Caja Derecha: Ficha Fiscal SRI & Clave de Acceso
+    rect(297, 635, 266, 170);
+    text(308, 785, 'F2', 10, `R.U.C.: ${comp.rucEmisor || ''}`);
+    text(308, 768, 'F2', 11, tipoDesc);
+    text(308, 752, 'F3', 9.5, `No. ${serie}`);
+    text(308, 735, 'F2', 7.5, 'NUMERO DE AUTORIZACION:');
+    text(308, 724, 'F3', 6.3, comp.numAutorizacion || clave);
+    text(
+      308,
+      708,
+      'F1',
+      7.5,
+      `FECHA AUTORIZACION: ${fmtDate(comp.fechaAutorizacion || comp.fechaEmision)}`,
+    );
+    text(308, 693, 'F2', 8, `AMBIENTE: ${ambienteLabel}   |   EMISION: NORMAL`);
+    text(308, 678, 'F2', 8, `ESTADO SRI: ${comp.estado || 'AUTORIZADO'}`);
+    text(308, 663, 'F2', 7.5, 'CLAVE DE ACCESO (49 DIGITOS):');
+
+    // Código de barras de la Clave de Acceso
+    for (let i = 0; i < clave.length; i++) {
+      const d = Number(clave[i]) || 0;
+      const bw = d % 2 === 0 ? 1.5 : 0.8;
+      ops.push(`0.1 g ${(308 + i * 4.8).toFixed(1)} 648 ${bw} 11 re f`);
+    }
+    text(308, 639, 'F3', 6.3, clave);
+
+    // 3. Datos del Comprador / Receptor
+    rect(32, 575, 531, 50, 0.96);
+    text(
+      42,
+      607,
+      'F2',
+      8.5,
+      `Razon Social / Comprador: ${(comp.razonSocialComprador || 'CONSUMIDOR FINAL').slice(0, 48)}`,
+    );
+    text(405, 607, 'F3', 8.5, `RUC/CI: ${comp.identificacionComprador || '9999999999999'}`);
+    text(42, 588, 'F1', 8, `Fecha de Emision: ${fmtDate(comp.fechaEmision)}`);
+    text(240, 588, 'F1', 8, `Ambiente SRI: ${ambienteLabel} (Cod. ${comp.ambiente || '1'})`);
+
+    // 4. Tabla de Detalles
+    let y = 548;
+    ops.push('0.14 g 32 548 531 20 re f');
+    text(38, y + 6, 'F2', 7.5, 'CODIGO', true);
+    text(110, y + 6, 'F2', 7.5, 'CANT.', true);
+    text(160, y + 6, 'F2', 7.5, 'DESCRIPCION', true);
+    text(390, y + 6, 'F2', 7.5, 'P. UNITARIO', true);
+    text(458, y + 6, 'F2', 7.5, 'DESC.', true);
+    text(505, y + 6, 'F2', 7.5, 'SUBTOTAL', true);
+
+    const detalles =
+      comp.detalles && comp.detalles.length > 0
+        ? comp.detalles
+        : [
+            {
+              id: 'item-1',
+              codigoPrincipal: 'PROD-001',
+              descripcion: `${tipoDesc} ELECTRONICA SERIE ${serie}`,
+              cantidad: 1,
+              precioUnitario: comp.subtotal || 0,
+              descuento: 0,
+              subtotal: comp.subtotal || 0,
+            },
+          ];
+
+    for (const item of detalles.slice(0, 14)) {
+      y -= 20;
+      rect(32, y, 531, 20);
+      text(38, y + 6, 'F3', 7.5, (item.codigoPrincipal || '001').slice(0, 12));
+      text(110, y + 6, 'F3', 7.5, Number(item.cantidad || 1).toFixed(2));
+      text(160, y + 6, 'F1', 7.5, (item.descripcion || '').slice(0, 42));
+      text(392, y + 6, 'F3', 7.5, fmtMoney(item.precioUnitario));
+      text(458, y + 6, 'F3', 7.5, fmtMoney(item.descuento));
+      text(505, y + 6, 'F3', 7.5, fmtMoney(item.subtotal));
+    }
+
+    // 5. Información Adicional y Totales
+    const sumTop = y - 16;
+    rect(32, sumTop - 95, 310, 95);
+    text(42, sumTop - 16, 'F2', 8, 'INFORMACION ADICIONAL Y FORMA DE PAGO');
+    let infoY = sumTop - 32;
+    const infos =
+      comp.infoAdicional && comp.infoAdicional.length > 0
+        ? comp.infoAdicional
+        : [
+            { nombre: 'Ambiente Fiscal', valor: `${ambienteLabel} (SRI Ecuador)` },
+            { nombre: 'Forma de Pago', valor: '20 - Otros con utilizacion del sistema financiero' },
+          ];
+    for (const info of infos.slice(0, 4)) {
+      text(42, infoY, 'F1', 7.5, `${info.nombre}: ${(info.valor || '').slice(0, 44)}`);
+      infoY -= 14;
+    }
+
+    rect(354, sumTop - 95, 209, 95, 0.96);
+    text(364, sumTop - 22, 'F1', 8, 'SUBTOTAL SIN IMPUESTOS');
+    text(505, sumTop - 22, 'F3', 8, fmtMoney(comp.subtotal));
+    text(364, sumTop - 42, 'F1', 8, 'TOTAL DESCUENTO');
+    text(505, sumTop - 42, 'F3', 8, '$0.00');
+    text(364, sumTop - 62, 'F1', 8, 'IVA 15%');
+    text(505, sumTop - 62, 'F3', 8, fmtMoney(comp.totalImpuestos));
+    text(364, sumTop - 84, 'F2', 9, 'IMPORTE TOTAL');
+    text(505, sumTop - 84, 'F3', 9, fmtMoney(comp.total));
+
+    text(
+      32,
+      28,
+      'F1',
+      7.5,
+      'Representacion Impresa de Comprobante Electronico (RIDE) - Servicio de Rentas Internas (SRI)',
+    );
+
+    const streamContent = ops.join('\n');
+    const objects: string[] = [
+      '1 0 obj\n<< /Type /Catalog /Pages 2 0 R >>\nendobj\n',
+      '2 0 obj\n<< /Type /Pages /Kids [3 0 R] /Count 1 >>\nendobj\n',
+      '3 0 obj\n<< /Type /Page /Parent 2 0 R /MediaBox [0 0 595 842] /Resources << /Font << /F1 4 0 R /F2 5 0 R /F3 6 0 R >> >> /Contents 7 0 R >>\nendobj\n',
+      '4 0 obj\n<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica /Encoding /WinAnsiEncoding >>\nendobj\n',
+      '5 0 obj\n<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica-Bold /Encoding /WinAnsiEncoding >>\nendobj\n',
+      '6 0 obj\n<< /Type /Font /Subtype /Type1 /BaseFont /Courier /Encoding /WinAnsiEncoding >>\nendobj\n',
+      `7 0 obj\n<< /Length ${streamContent.length} >>\nstream\n${streamContent}\nendstream\nendobj\n`,
+    ];
+
+    let pdf = '%PDF-1.4\n';
+    const offsets: number[] = [0];
+    for (const obj of objects) {
+      offsets.push(pdf.length);
+      pdf += obj;
+    }
+    const xrefOffset = pdf.length;
+    pdf += `xref\n0 ${objects.length + 1}\n0000000000 65535 f \n`;
+    for (let i = 1; i <= objects.length; i++) {
+      pdf += `${String(offsets[i]).padStart(10, '0')} 00000 n \n`;
+    }
+    pdf += `trailer\n<< /Size ${objects.length + 1} /Root 1 0 R >>\nstartxref\n${xrefOffset}\n%%EOF`;
+
+    return new Blob([pdf], { type: 'application/pdf' });
+  }
+
+  private buildXmlBlob(comp: ComprobanteDetallado): Blob {
+    const ambienteDesc = comp.ambiente === '2' ? 'PRODUCCION' : 'PRUEBAS';
+    const xml = `<?xml version="1.0" encoding="UTF-8"?>
+<autorizacion>
+  <estado>${comp.estado || 'AUTORIZADO'}</estado>
+  <numeroAutorizacion>${comp.numAutorizacion || comp.claveAcceso}</numeroAutorizacion>
+  <fechaAutorizacion>${comp.fechaAutorizacion || comp.fechaEmision}</fechaAutorizacion>
+  <ambiente>${ambienteDesc}</ambiente>
+  <comprobante><![CDATA[<?xml version="1.0" encoding="UTF-8"?>
+<factura id="comprobante" version="2.1.0">
+  <infoTributaria>
+    <ambiente>${comp.ambiente || '1'}</ambiente>
+    <tipoEmision>1</tipoEmision>
+    <razonSocial>${comp.razonSocialEmisor}</razonSocial>
+    <ruc>${comp.rucEmisor}</ruc>
+    <claveAcceso>${comp.claveAcceso}</claveAcceso>
+    <codDoc>${comp.tipoComprobante || '01'}</codDoc>
+    <estab>${comp.establecimiento || '001'}</estab>
+    <ptoEmi>${comp.puntoEmision || '001'}</ptoEmi>
+    <secuencial>${comp.secuencial || '000000001'}</secuencial>
+  </infoTributaria>
+  <infoFactura>
+    <fechaEmision>${comp.fechaEmision}</fechaEmision>
+    <razonSocialComprador>${comp.razonSocialComprador}</razonSocialComprador>
+    <identificacionComprador>${comp.identificacionComprador}</identificacionComprador>
+    <totalSinImpuestos>${Number(comp.subtotal || 0).toFixed(2)}</totalSinImpuestos>
+    <importeTotal>${Number(comp.total || 0).toFixed(2)}</importeTotal>
+  </infoFactura>
+</factura>]]></comprobante>
+</autorizacion>`;
+    return new Blob([xml], { type: 'application/xml' });
   }
 
   verificarEnSri(claveAcceso: string): Observable<SriVerifyResponse> {

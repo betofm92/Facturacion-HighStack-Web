@@ -497,10 +497,16 @@ export class DashboardComponent implements OnInit {
 
   descargarRide(row: Comprobante): void {
     this.toast.info(`Generando RIDE PDF para ${row.establecimiento}-${row.puntoEmision}-${row.secuencial}`);
-    this.sriApi.downloadRide(row.claveAcceso).subscribe({
+    this.sriApi.downloadRide(row.claveAcceso, row).subscribe({
       next: (blob) => {
         const blobUrl = URL.createObjectURL(blob);
-        window.open(blobUrl, '_blank');
+        const win = window.open(blobUrl, '_blank');
+        if (!win) {
+          const a = document.createElement('a');
+          a.href = blobUrl;
+          a.download = `RIDE_${row.establecimiento}-${row.puntoEmision}-${row.secuencial}.pdf`;
+          a.click();
+        }
       },
       error: () => {
         this.toast.error('No se pudo descargar el RIDE PDF de este comprobante');
@@ -510,7 +516,7 @@ export class DashboardComponent implements OnInit {
 
   descargarXml(row: Comprobante): void {
     this.toast.info(`Descargando XML XAdES-BES (${row.claveAcceso.slice(0, 12)}...)`);
-    this.sriApi.downloadXml(row.claveAcceso).subscribe({
+    this.sriApi.downloadXml(row.claveAcceso, row).subscribe({
       next: (blob) => {
         const blobUrl = URL.createObjectURL(blob);
         const a = document.createElement('a');
