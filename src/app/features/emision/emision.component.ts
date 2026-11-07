@@ -543,10 +543,25 @@ export class EmisionComponent implements OnInit {
   readonly rucEmisorSeleccionado = signal<string>('1793148201001');
   readonly establecimiento = signal<string>('001');
   readonly puntoEmision = signal<string>('001');
-  readonly fechaIso = signal<string>('2026-11-06');
-  readonly horaEmision = signal<string>('09:30');
+  readonly fechaIso = signal<string>(EmisionComponent.obtenerFechaLocalIso());
+  readonly horaEmision = signal<string>(EmisionComponent.obtenerHoraLocal24());
   readonly zonaHoraria = signal<string>('America/Guayaquil');
   readonly formaPago = signal<string>('20');
+
+  private static obtenerFechaLocalIso(): string {
+    const now = new Date();
+    const yyyy = now.getFullYear();
+    const mm = String(now.getMonth() + 1).padStart(2, '0');
+    const dd = String(now.getDate()).padStart(2, '0');
+    return `${yyyy}-${mm}-${dd}`;
+  }
+
+  private static obtenerHoraLocal24(): string {
+    const now = new Date();
+    const hh = String(now.getHours()).padStart(2, '0');
+    const min = String(now.getMinutes()).padStart(2, '0');
+    return `${hh}:${min}`;
+  }
 
   readonly tipoDocumento = signal<string>('01');
   readonly pasoActivo = signal<number>(0);
@@ -869,22 +884,21 @@ export class EmisionComponent implements OnInit {
     const emisorObj =
       this.emisores().find((e) => e.ruc === this.rucEmisorSeleccionado()) || this.emisores()[0];
 
-    const [yyyy, mm, dd] = (this.fechaIso() || '2026-11-06').split('-');
-    const fechaEmisionSri = `${dd}/${mm}/${yyyy}`;
+    const rawFecha = (this.fechaIso() || EmisionComponent.obtenerFechaLocalIso()).trim();
+    const fechaEmisionSri = /^\d{2}\/\d{2}\/\d{4}$/.test(rawFecha)
+      ? rawFecha
+      : (() => {
+          const [yyyy, mm, dd] = rawFecha.split('-');
+          return `${dd}/${mm}/${yyyy}`;
+        })();
 
-    const infoAdicional = [
-      { nombre: 'Email', valor: this.emailComprador() },
-      { nombre: 'Dirección', valor: this.direccionComprador() },
-    ];
-    if (this.telefonoComprador()) {
-      infoAdicional.push({ nombre: 'Teléfono', valor: this.telefonoComprador() });
-    }
-    if (this.observacionesRide()) {
-      infoAdicional.push({ nombre: 'Observaciones', valor: this.observacionesRide() });
+    const infoAdicional: Array<{ nombre: string; valor: string }> = [];
+    if (this.observacionesRide().trim()) {
+      infoAdicional.push({ nombre: 'Observaciones', valor: this.observacionesRide().trim() });
     }
     infoAdicional.push({
       nombre: 'Timbrado',
-      valor: `${this.horaEmision()} (${this.zonaHoraria()})`,
+      valor: `${this.horaEmision() || EmisionComponent.obtenerHoraLocal24()} (${this.zonaHoraria()})`,
     });
 
     return {
@@ -902,11 +916,11 @@ export class EmisionComponent implements OnInit {
       },
       comprador: {
         tipoIdentificacion: this.tipoIdentificacion(),
-        identificacion: this.identificacionComprador(),
-        razonSocial: this.razonSocialComprador(),
-        direccion: this.direccionComprador(),
-        email: this.emailComprador(),
-        telefono: this.telefonoComprador(),
+        identificacion: this.identificacionComprador().trim(),
+        razonSocial: this.razonSocialComprador().trim(),
+        direccion: this.direccionComprador().trim() || undefined,
+        email: this.emailComprador().trim() || undefined,
+        telefono: this.telefonoComprador().trim() || undefined,
       },
       detalles: this.items().map((item) => {
         const base = +(item.cantidad * item.precioUnitario - item.descuento).toFixed(2);
@@ -937,11 +951,6 @@ export class EmisionComponent implements OnInit {
         },
       ],
       infoAdicional,
-      _totals: {
-        subtotal: this.subtotalIva15(),
-        iva: this.totalIva(),
-        total: this.totalGeneral(),
-      },
     };
   }
 
@@ -972,14 +981,19 @@ export class EmisionComponent implements OnInit {
     this.sriApi.emitirFactura(dto).subscribe({
       next: (res) => {
         this.emitiendo.set(false);
+        const payload = res?.data ?? res;
         this.toast.success(
-          `Comprobante ${res.estado || 'AUTORIZADO'} · Clave: ${res.claveAcceso?.slice(0, 15)}...`,
+          `Comprobante ${payload?.estado || 'PROCESADO'} · Clave: ${(payload?.claveAcceso || '').slice(0, 15)}...`,
         );
         void this.router.navigate(['/comprobantes']);
       },
-      error: () => {
+      error: (err) => {
         this.emitiendo.set(false);
-        this.toast.error('Error al emitir el comprobante ante el SRI');
+        const rawErr = err?.error?.error || err?.error?.message;
+        const msg = Array.isArray(rawErr)
+          ? rawErr.join(', ')
+          : rawErr || 'Error al emitir el comprobante ante el SRI';
+        this.toast.error(msg);
       },
     });
   }

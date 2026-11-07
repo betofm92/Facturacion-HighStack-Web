@@ -1,6 +1,6 @@
 import { Injectable, inject, signal } from '@angular/core';
 import { HttpClient, HttpParams } from '@angular/common/http';
-import { Observable, catchError, map, of } from 'rxjs';
+import { Observable, catchError, map, of, throwError } from 'rxjs';
 import { environment } from '../../../environments/environment';
 import {
   CertificateItem,
@@ -306,8 +306,12 @@ export class SriApiService {
     });
 
     return this.http.get<PaginatedComprobantes>(`${this.baseUrl}/sri/comprobantes`, { params }).pipe(
+      map((res) => ({
+        ...res,
+        data: (res.data || []).map((c) => this.normalizarComprobante(c)),
+      })),
       catchError(() => {
-        let filtered = [...this.mockComprobantes];
+        let filtered = [...this.mockComprobantes].map((c) => this.normalizarComprobante(c));
         if (filters.tipoComprobante) {
           filtered = filtered.filter((c) => c.tipoComprobante === filters.tipoComprobante);
         }
@@ -339,20 +343,106 @@ export class SriApiService {
     return this.http
       .get<ComprobanteDetallado>(`${this.baseUrl}/sri/comprobantes/${claveAcceso}`)
       .pipe(
+        map((det) => this.normalizarComprobanteDetallado(det, fallbackRow)),
         catchError(() => {
           const found = this.mockComprobantes.find((c) => c.claveAcceso === claveAcceso);
-          if (found) return of(found);
+          if (found) return of(this.normalizarComprobanteDetallado(found, fallbackRow));
           if (fallbackRow) {
-            return of({
-              ...fallbackRow,
-              detalles: [],
-              infoAdicional: [],
-              xmlDisponible: true,
-            });
+            return of(
+              this.normalizarComprobanteDetallado(
+                {
+                  ...fallbackRow,
+                  detalles: [],
+                  infoAdicional: [],
+                  xmlDisponible: true,
+                },
+                fallbackRow,
+              ),
+            );
           }
-          return of(this.mockComprobantes[0]);
+          return of(this.normalizarComprobanteDetallado(this.mockComprobantes[0]));
         }),
       );
+  }
+
+  formatearFechaEmision(fecha?: string | null, fallbackIso?: string | null): string {
+    const raw = String(fecha || fallbackIso || '').trim();
+    if (!raw) return '—';
+
+    if (/^\d{2}\/\d{2}\/\d{4}$/.test(raw)) {
+      return raw;
+    }
+
+    const isoMatch = raw.match(/^(\d{4})-(\d{2})-(\d{2})/);
+    if (isoMatch) {
+      const [, yyyy, mm, dd] = isoMatch;
+      return `${dd}/${mm}/${yyyy}`;
+    }
+
+    const parsed = new Date(raw);
+    if (!isNaN(parsed.getTime())) {
+      const dd = String(parsed.getDate()).padStart(2, '0');
+      const mm = String(parsed.getMonth() + 1).padStart(2, '0');
+      const yyyy = parsed.getFullYear();
+      return `${dd}/${mm}/${yyyy}`;
+    }
+
+    return raw;
+  }
+
+  formatearFechaAutorizacion(fecha?: string | null, fallbackIso?: string | null): string {
+    const raw = String(fecha || fallbackIso || '').trim();
+    if (!raw) return 'Pendiente';
+
+    if (/^\d{2}\/\d{2}\/\d{4}\s+\d{2}:\d{2}(:\d{2})?$/.test(raw)) {
+      return raw;
+    }
+
+    if (/^\d{2}\/\d{2}\/\d{4}$/.test(raw)) {
+      return `${raw} 00:00:00`;
+    }
+
+    const parsed = new Date(raw);
+    if (!isNaN(parsed.getTime())) {
+      const dd = String(parsed.getDate()).padStart(2, '0');
+      const mm = String(parsed.getMonth() + 1).padStart(2, '0');
+      const yyyy = parsed.getFullYear();
+      const hh = String(parsed.getHours()).padStart(2, '0');
+      const min = String(parsed.getMinutes()).padStart(2, '0');
+      const ss = String(parsed.getSeconds()).padStart(2, '0');
+      return `${dd}/${mm}/${yyyy} ${hh}:${min}:${ss}`;
+    }
+
+    return raw;
+  }
+
+  private normalizarComprobante<T extends Comprobante>(comp: T, fallback?: Comprobante): T {
+    const rawComp = ((comp as any)?.data ?? comp) as T;
+    const fechaEmisionRaw = rawComp.fechaEmision || fallback?.fechaEmision || rawComp.createdAt || fallback?.createdAt;
+    const fechaAutorizacionRaw = rawComp.fechaAutorizacion || fallback?.fechaAutorizacion;
+    const createdAtRaw = rawComp.createdAt || fallback?.createdAt;
+    const updatedAtRaw = rawComp.updatedAt || fallback?.updatedAt || createdAtRaw;
+
+    return {
+      ...(fallback || {}),
+      ...rawComp,
+      fechaEmision: fechaEmisionRaw || '',
+      fechaAutorizacion: fechaAutorizacionRaw,
+      createdAt: createdAtRaw || '',
+      updatedAt: updatedAtRaw || '',
+    };
+  }
+
+  private normalizarComprobanteDetallado(
+    comp: ComprobanteDetallado,
+    fallback?: Comprobante,
+  ): ComprobanteDetallado {
+    const base = this.normalizarComprobante(comp, fallback);
+    return {
+      ...base,
+      detalles: Array.isArray(base.detalles) ? base.detalles : [],
+      infoAdicional: Array.isArray(base.infoAdicional) ? base.infoAdicional : [],
+    };
   }
 
   downloadRide(claveAcceso: string, fallbackRow?: Comprobante): Observable<Blob> {
@@ -394,15 +484,10 @@ export class SriApiService {
         .replace(/\)/g, '\\)');
 
     const fmtMoney = (n: number | undefined): string => `$${Number(n || 0).toFixed(2)}`;
-    const fmtDate = (d: string | undefined): string => {
-      if (!d) return '';
-      const parsed = new Date(d);
-      if (isNaN(parsed.getTime())) return clean(d);
-      const dd = String(parsed.getDate()).padStart(2, '0');
-      const mm = String(parsed.getMonth() + 1).padStart(2, '0');
-      const yyyy = parsed.getFullYear();
-      return `${dd}/${mm}/${yyyy}`;
-    };
+    const fechaEmisionFmt = clean(this.formatearFechaEmision(comp.fechaEmision, comp.createdAt));
+    const fechaAutorizacionFmt = clean(
+      this.formatearFechaAutorizacion(comp.fechaAutorizacion, comp.createdAt || comp.fechaEmision),
+    );
 
     const ambienteLabel = comp.ambiente === '2' ? 'PRODUCCION' : 'PRUEBAS';
     const serie = `${comp.establecimiento || '001'}-${comp.puntoEmision || '001'}-${comp.secuencial || '000000001'}`;
@@ -446,7 +531,7 @@ export class SriApiService {
       708,
       'F1',
       7.5,
-      `FECHA AUTORIZACION: ${fmtDate(comp.fechaAutorizacion || comp.fechaEmision)}`,
+      `FECHA Y HORA AUTORIZACION: ${fechaAutorizacionFmt}`,
     );
     text(308, 693, 'F2', 8, `AMBIENTE: ${ambienteLabel}   |   EMISION: NORMAL`);
     text(308, 678, 'F2', 8, `ESTADO SRI: ${comp.estado || 'AUTORIZADO'}`);
@@ -470,7 +555,7 @@ export class SriApiService {
       `Razon Social / Comprador: ${(comp.razonSocialComprador || 'CONSUMIDOR FINAL').slice(0, 48)}`,
     );
     text(405, 607, 'F3', 8.5, `RUC/CI: ${comp.identificacionComprador || '9999999999999'}`);
-    text(42, 588, 'F1', 8, `Fecha de Emision: ${fmtDate(comp.fechaEmision)}`);
+    text(42, 588, 'F1', 8, `Fecha de Emision: ${fechaEmisionFmt}`);
     text(240, 588, 'F1', 8, `Ambiente SRI: ${ambienteLabel} (Cod. ${comp.ambiente || '1'})`);
 
     // 4. Tabla de Detalles
@@ -573,11 +658,16 @@ export class SriApiService {
 
   private buildXmlBlob(comp: ComprobanteDetallado): Blob {
     const ambienteDesc = comp.ambiente === '2' ? 'PRODUCCION' : 'PRUEBAS';
+    const fechaEmisionSri = this.formatearFechaEmision(comp.fechaEmision, comp.createdAt);
+    const fechaAutorizacionSri = this.formatearFechaAutorizacion(
+      comp.fechaAutorizacion,
+      comp.createdAt || comp.fechaEmision,
+    );
     const xml = `<?xml version="1.0" encoding="UTF-8"?>
 <autorizacion>
   <estado>${comp.estado || 'AUTORIZADO'}</estado>
   <numeroAutorizacion>${comp.numAutorizacion || comp.claveAcceso}</numeroAutorizacion>
-  <fechaAutorizacion>${comp.fechaAutorizacion || comp.fechaEmision}</fechaAutorizacion>
+  <fechaAutorizacion>${fechaAutorizacionSri}</fechaAutorizacion>
   <ambiente>${ambienteDesc}</ambiente>
   <comprobante><![CDATA[<?xml version="1.0" encoding="UTF-8"?>
 <factura id="comprobante" version="2.1.0">
@@ -593,7 +683,7 @@ export class SriApiService {
     <secuencial>${comp.secuencial || '000000001'}</secuencial>
   </infoTributaria>
   <infoFactura>
-    <fechaEmision>${comp.fechaEmision}</fechaEmision>
+    <fechaEmision>${fechaEmisionSri}</fechaEmision>
     <razonSocialComprador>${comp.razonSocialComprador}</razonSocialComprador>
     <identificacionComprador>${comp.identificacionComprador}</identificacionComprador>
     <totalSinImpuestos>${Number(comp.subtotal || 0).toFixed(2)}</totalSinImpuestos>
@@ -917,7 +1007,19 @@ export class SriApiService {
 
   emitirFactura(payload: any): Observable<any> {
     return this.http.post(`${this.baseUrl}/sri/emitir/factura`, payload).pipe(
-      catchError(() => {
+      catchError((err) => {
+        // Si el backend respondió con un error HTTP real (ej. 400 / 403 / 500) y no estamos en modo demo, propagarlo
+        if (!this.auth.isDemoMode() && err?.status && err.status !== 0) {
+          return throwError(() => err);
+        }
+
+        const subtotalCalc = (payload.detalles || []).reduce(
+          (acc: number, d: any) => acc + (Number(d.cantidad || 0) * Number(d.precioUnitario || 0) - Number(d.descuento || 0)),
+          0,
+        );
+        const ivaCalc = +(subtotalCalc * 0.15).toFixed(2);
+        const totalCalc = +(subtotalCalc + ivaCalc).toFixed(2);
+
         const randomDigits = Math.floor(10000000 + Math.random() * 90000000);
         const claveAcceso = `0611202601${payload.emisor?.ruc || '1793148201001'}1001001000001484${randomDigits}14`;
         const newComp: ComprobanteDetallado = {
@@ -934,9 +1036,9 @@ export class SriApiService {
           razonSocialEmisor: payload.emisor?.razonSocial || 'HIGHSTACK LABS ECUADOR S.A.S.',
           identificacionComprador: payload.comprador?.identificacion || '9999999999999',
           razonSocialComprador: payload.comprador?.razonSocial || 'CONSUMIDOR FINAL',
-          subtotal: payload._totals?.subtotal || 0,
-          totalImpuestos: payload._totals?.iva || 0,
-          total: payload._totals?.total || 0,
+          subtotal: subtotalCalc,
+          totalImpuestos: ivaCalc,
+          total: totalCalc,
           estado: 'AUTORIZADO',
           fechaAutorizacion: new Date().toISOString(),
           numAutorizacion: claveAcceso,

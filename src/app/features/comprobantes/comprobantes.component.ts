@@ -189,7 +189,7 @@ import { environment } from '../../../environments/environment';
 
             <ng-template tableCell="fechaEmision" let-value let-row="row">
               <span class="font-mono text-xs cursor-pointer hover:underline" (click)="inspeccionar(row)">
-                {{ value | date:'dd/MM/yyyy' }}
+                {{ formatearFechaEmision(row) }}
               </span>
             </ng-template>
 
@@ -313,11 +313,11 @@ import { environment } from '../../../environments/environment';
               <div class="grid grid-cols-2 gap-3 font-mono text-[11px]">
                 <div class="p-2.5 border border-[var(--color-border)] bg-[var(--color-muted)]/10">
                   <span class="text-[var(--color-muted-foreground)] block text-[10px] uppercase">Fecha Emisión</span>
-                  <span>{{ comp.fechaEmision | date:'dd/MM/yyyy' }}</span>
+                  <span>{{ formatearFechaEmision(comp) }}</span>
                 </div>
                 <div class="p-2.5 border border-[var(--color-border)] bg-[var(--color-muted)]/10">
                   <span class="text-[var(--color-muted-foreground)] block text-[10px] uppercase">Autorización SRI</span>
-                  <span>{{ comp.fechaAutorizacion ? (comp.fechaAutorizacion | date:'dd/MM/yyyy HH:mm') : 'Pendiente' }}</span>
+                  <span>{{ formatearFechaAutorizacion(comp) }}</span>
                 </div>
               </div>
 
@@ -464,6 +464,17 @@ export class ComprobantesComponent implements OnInit {
   copiarClave(clave: string): void {
     void navigator.clipboard.writeText(clave);
     this.toast.info('Clave de acceso de 49 dígitos copiada al portapapeles');
+  }
+
+  formatearFechaEmision(comp: Comprobante): string {
+    return this.sriApi.formatearFechaEmision(comp.fechaEmision, comp.createdAt);
+  }
+
+  formatearFechaAutorizacion(comp: Comprobante): string {
+    if (!comp.fechaAutorizacion && comp.estado !== 'AUTORIZADO') {
+      return 'Pendiente';
+    }
+    return this.sriApi.formatearFechaAutorizacion(comp.fechaAutorizacion, comp.updatedAt || comp.createdAt);
   }
 
   inspeccionar(row: Comprobante): void {
