@@ -52,6 +52,14 @@ ui-badge span {
   border-radius: 0.1875rem !important;
 }
 
+/* Contraste óptimo de badges en tema oscuro */
+body.dark ui-badge .text-emerald-600 {
+  color: var(--color-emerald-400) !important;
+}
+body.dark ui-badge .text-amber-600 {
+  color: var(--color-amber-400) !important;
+}
+
 ui-tabs [role="tablist"],
 ui-tabs [role="tab"],
 ui-segmented > div,

@@ -230,7 +230,9 @@ export class ShellLayoutComponent {
   readonly sriApi = inject(SriApiService);
   private readonly router = inject(Router);
 
-  readonly isDark = signal<boolean>(document.body.classList.contains('dark'));
+  readonly isDark = signal<boolean>(
+    (localStorage.getItem('hs_sri_theme') ?? 'dark') === 'dark',
+  );
 
   readonly userName = computed(() => {
     const email = this.auth.user()?.email || 'HighStack Admin';
@@ -291,6 +293,7 @@ export class ShellLayoutComponent {
   toggleDarkMode(): void {
     const next = !this.isDark();
     this.isDark.set(next);
+    localStorage.setItem('hs_sri_theme', next ? 'dark' : 'light');
     document.body.classList.toggle('dark', next);
   }
 

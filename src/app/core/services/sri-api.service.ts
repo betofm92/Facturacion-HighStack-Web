@@ -4,6 +4,7 @@ import { Observable, catchError, of } from 'rxjs';
 import { environment } from '../../../environments/environment';
 import {
   CertificateItem,
+  Comprobante,
   ComprobanteDetallado,
   Emisor,
   PaginatedComprobantes,
@@ -333,17 +334,36 @@ export class SriApiService {
     );
   }
 
-  getComprobanteDetalle(claveAcceso: string): Observable<ComprobanteDetallado> {
+  getComprobanteDetalle(claveAcceso: string, fallbackRow?: Comprobante): Observable<ComprobanteDetallado> {
     return this.http
       .get<ComprobanteDetallado>(`${this.baseUrl}/sri/comprobantes/${claveAcceso}`)
       .pipe(
         catchError(() => {
-          const found =
-            this.mockComprobantes.find((c) => c.claveAcceso === claveAcceso) ||
-            this.mockComprobantes[0];
-          return of(found);
+          const found = this.mockComprobantes.find((c) => c.claveAcceso === claveAcceso);
+          if (found) return of(found);
+          if (fallbackRow) {
+            return of({
+              ...fallbackRow,
+              detalles: [],
+              infoAdicional: [],
+              xmlDisponible: true,
+            });
+          }
+          return of(this.mockComprobantes[0]);
         }),
       );
+  }
+
+  downloadRide(claveAcceso: string): Observable<Blob> {
+    return this.http.get(`${this.baseUrl}/sri/comprobantes/${claveAcceso}/ride`, {
+      responseType: 'blob',
+    });
+  }
+
+  downloadXml(claveAcceso: string): Observable<Blob> {
+    return this.http.get(`${this.baseUrl}/sri/comprobantes/${claveAcceso}/xml`, {
+      responseType: 'blob',
+    });
   }
 
   verificarEnSri(claveAcceso: string): Observable<SriVerifyResponse> {

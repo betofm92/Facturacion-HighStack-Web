@@ -6,12 +6,15 @@ import { provideHighstack } from '@highstacklabs2026/ui';
 import { routes } from './app.routes';
 import { authInterceptor } from './core/interceptors/auth.interceptor';
 
+const savedTheme = localStorage.getItem('hs_sri_theme');
+const initialDark = savedTheme ? savedTheme === 'dark' : true;
+
 export const appConfig: ApplicationConfig = {
   providers: [
     provideBrowserGlobalErrorListeners(),
     provideRouter(routes),
     provideHttpClient(withInterceptors([authInterceptor])),
-    provideHighstack({ dark: false }),
+    provideHighstack({ dark: initialDark }),
   ],
 };
 

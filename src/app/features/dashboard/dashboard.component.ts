@@ -9,6 +9,12 @@ import {
   CardDescriptionComponent,
   CardHeaderComponent,
   CardTitleComponent,
+  DrawerComponent,
+  DrawerContentComponent,
+  DrawerDescriptionComponent,
+  DrawerFooterComponent,
+  DrawerHeaderComponent,
+  DrawerTitleComponent,
   ProgressComponent,
   SeparatorComponent,
   TableCellDirective,
@@ -16,8 +22,9 @@ import {
   TableComponent,
   ToastService,
 } from '@highstacklabs2026/ui';
-import { Comprobante, Emisor } from '../../core/models/api.models';
+import { Comprobante, ComprobanteDetallado, Emisor } from '../../core/models/api.models';
 import { SriApiService } from '../../core/services/sri-api.service';
+import { environment } from '../../../environments/environment';
 
 @Component({
   selector: 'app-dashboard',
@@ -31,7 +38,14 @@ import { SriApiService } from '../../core/services/sri-api.service';
     CardTitleComponent,
     CardDescriptionComponent,
     CardContentComponent,
+    DrawerComponent,
+    DrawerHeaderComponent,
+    DrawerTitleComponent,
+    DrawerDescriptionComponent,
+    DrawerContentComponent,
+    DrawerFooterComponent,
     ProgressComponent,
+    SeparatorComponent,
     TableComponent,
     TableCellDirective,
   ],
@@ -148,36 +162,52 @@ import { SriApiService } from '../../core/services/sri-api.service';
                 emptyMessage="No se encontraron comprobantes registrados."
               >
                 <ng-template tableCell="tipoComprobanteDescripcion" let-value let-row="row">
-                  <div class="flex flex-col">
-                    <span class="font-medium text-xs">{{ value }}</span>
-                    <span class="font-mono text-[11px] text-[var(--color-muted-foreground)]">
+                  <div class="flex flex-col cursor-pointer group" (click)="inspeccionar(row)">
+                    <span class="font-medium text-xs group-hover:underline">{{ value }}</span>
+                    <span class="font-mono text-[11px] text-[var(--color-muted-foreground)] group-hover:text-[var(--color-foreground)] transition-colors">
                       {{ row.establecimiento }}-{{ row.puntoEmision }}-{{ row.secuencial }}
                     </span>
                   </div>
                 </ng-template>
 
                 <ng-template tableCell="razonSocialComprador" let-value let-row="row">
-                  <div class="flex flex-col">
-                    <span class="text-xs font-medium truncate max-w-[200px]">{{ value }}</span>
+                  <div class="flex flex-col cursor-pointer group" (click)="inspeccionar(row)">
+                    <span class="text-xs font-medium truncate max-w-[200px] group-hover:underline">{{ value }}</span>
                     <span class="font-mono text-[11px] text-[var(--color-muted-foreground)]">ID: {{ row.identificacionComprador }}</span>
                   </div>
                 </ng-template>
 
-                <ng-template tableCell="estado" let-value>
-                  <ui-badge
-                    [color]="value === 'AUTORIZADO' ? 'success' : value === 'DEVUELTA' || value === 'RECHAZADO' ? 'destructive' : 'warning'"
-                    variant="soft"
-                    size="sm"
-                    [dot]="true"
-                  >
-                    {{ value }}
-                  </ui-badge>
+                <ng-template tableCell="fechaEmision" let-value let-row="row">
+                  <span class="font-mono text-xs cursor-pointer hover:underline" (click)="inspeccionar(row)">
+                    {{ value | date:'dd/MM/yyyy' }}
+                  </span>
                 </ng-template>
 
-                <ng-template tableCell="total" let-value>
-                  <span class="font-mono font-medium text-xs tabular-nums">
+                <ng-template tableCell="estado" let-value let-row="row">
+                  <div class="cursor-pointer inline-block" (click)="inspeccionar(row)">
+                    <ui-badge
+                      [color]="value === 'AUTORIZADO' ? 'success' : value === 'DEVUELTA' || value === 'RECHAZADO' ? 'destructive' : 'warning'"
+                      variant="soft"
+                      size="sm"
+                      [dot]="true"
+                    >
+                      {{ value }}
+                    </ui-badge>
+                  </div>
+                </ng-template>
+
+                <ng-template tableCell="total" let-value let-row="row">
+                  <span class="font-mono font-medium text-xs tabular-nums cursor-pointer hover:underline" (click)="inspeccionar(row)">
                     {{ value | currency:'USD':'symbol':'1.2-2' }}
                   </span>
+                </ng-template>
+
+                <ng-template tableCell="acciones" let-row="row">
+                  <div class="flex justify-end">
+                    <ui-button variant="outline" size="xs" (click)="inspeccionar(row)">
+                      Ver Detalle
+                    </ui-button>
+                  </div>
                 </ng-template>
               </ui-table>
             </ui-card-content>
@@ -243,6 +273,133 @@ import { SriApiService } from '../../core/services/sri-api.service';
           </ui-card>
         </div>
       </div>
+      <!-- Drawer Lateral de Detalle del Comprobante -->
+      <ui-drawer [(open)]="drawerOpen" side="right" size="lg">
+        <ui-drawer-header>
+          <ui-drawer-title>Auditoría Técnica del Comprobante</ui-drawer-title>
+          <ui-drawer-description>
+            Detalle de estructura XML, impuestos y autorización ante el SRI.
+          </ui-drawer-description>
+        </ui-drawer-header>
+
+        <ui-drawer-content>
+          @if (seleccionado(); as comp) {
+            <div class="space-y-5 text-xs">
+              <div class="p-3.5 border border-[var(--color-border)] bg-[var(--color-muted)]/30 space-y-2">
+                <div class="flex items-center justify-between">
+                  <span class="font-mono text-[11px] uppercase text-[var(--color-muted-foreground)]">
+                    {{ comp.tipoComprobanteDescripcion }} · {{ comp.establecimiento }}-{{ comp.puntoEmision }}-{{ comp.secuencial }}
+                  </span>
+                  <ui-badge
+                    [color]="comp.estado === 'AUTORIZADO' ? 'success' : 'warning'"
+                    variant="soft"
+                    size="sm"
+                  >
+                    {{ comp.estado }}
+                  </ui-badge>
+                </div>
+                <div class="space-y-1 pt-1">
+                  <div class="text-[11px] text-[var(--color-muted-foreground)]">Clave de Acceso (49 dígitos):</div>
+                  <div class="font-mono text-[11px] break-all bg-[var(--color-background)] p-2 border border-[var(--color-border)] select-all">
+                    {{ comp.claveAcceso }}
+                  </div>
+                </div>
+              </div>
+
+              <div class="grid grid-cols-2 gap-3">
+                <div class="p-3 border border-[var(--color-border)]">
+                  <div class="text-[10px] font-mono uppercase text-[var(--color-muted-foreground)]">Emisor</div>
+                  <div class="font-semibold mt-1">{{ comp.razonSocialEmisor }}</div>
+                  <div class="font-mono text-[11px] text-[var(--color-muted-foreground)]">RUC: {{ comp.rucEmisor }}</div>
+                </div>
+                <div class="p-3 border border-[var(--color-border)]">
+                  <div class="text-[10px] font-mono uppercase text-[var(--color-muted-foreground)]">Adquirente / Receptor</div>
+                  <div class="font-semibold mt-1">{{ comp.razonSocialComprador }}</div>
+                  <div class="font-mono text-[11px] text-[var(--color-muted-foreground)]">ID: {{ comp.identificacionComprador }}</div>
+                </div>
+              </div>
+
+              <div class="grid grid-cols-2 gap-3 font-mono text-[11px]">
+                <div class="p-2.5 border border-[var(--color-border)] bg-[var(--color-muted)]/10">
+                  <span class="text-[var(--color-muted-foreground)] block text-[10px] uppercase">Fecha Emisión</span>
+                  <span>{{ comp.fechaEmision | date:'dd/MM/yyyy' }}</span>
+                </div>
+                <div class="p-2.5 border border-[var(--color-border)] bg-[var(--color-muted)]/10">
+                  <span class="text-[var(--color-muted-foreground)] block text-[10px] uppercase">Autorización SRI</span>
+                  <span>{{ comp.fechaAutorizacion ? (comp.fechaAutorizacion | date:'dd/MM/yyyy HH:mm') : 'Pendiente' }}</span>
+                </div>
+              </div>
+
+              <ui-separator />
+
+              <div class="space-y-2">
+                <div class="font-mono text-[11px] uppercase text-[var(--color-muted-foreground)]">
+                  Líneas de Detalle ({{ comp.detalles.length }})
+                </div>
+                <div class="border border-[var(--color-border)] divide-y divide-[var(--color-border)]">
+                  @for (item of comp.detalles; track item.id) {
+                    <div class="p-2.5 flex items-center justify-between gap-3">
+                      <div>
+                        <div class="font-medium">{{ item.descripcion }}</div>
+                        <div class="font-mono text-[11px] text-[var(--color-muted-foreground)]">
+                          Cód: {{ item.codigoPrincipal }} · Cant: {{ item.cantidad }} × {{ item.precioUnitario | currency:'USD' }}
+                        </div>
+                      </div>
+                      <div class="font-mono font-semibold tabular-nums">
+                        {{ item.subtotal | currency:'USD' }}
+                      </div>
+                    </div>
+                  } @empty {
+                    <div class="p-3 text-center text-[var(--color-muted-foreground)] font-mono text-[11px]">
+                      Sin líneas de detalle adicionales registradas.
+                    </div>
+                  }
+                </div>
+              </div>
+
+              <div class="p-3 border border-[var(--color-border)] bg-[var(--color-muted)]/20 space-y-1.5 font-mono">
+                <div class="flex justify-between">
+                  <span class="text-[var(--color-muted-foreground)]">Subtotal Sin Impuestos:</span>
+                  <span>{{ comp.subtotal | currency:'USD' }}</span>
+                </div>
+                <div class="flex justify-between">
+                  <span class="text-[var(--color-muted-foreground)]">Total Impuestos (IVA):</span>
+                  <span>{{ comp.totalImpuestos | currency:'USD' }}</span>
+                </div>
+                <div class="flex justify-between text-sm font-semibold border-t border-[var(--color-border)] pt-1.5">
+                  <span>Importe Total:</span>
+                  <span>{{ comp.total | currency:'USD' }}</span>
+                </div>
+              </div>
+
+              @if (comp.infoAdicional?.length) {
+                <div class="space-y-1.5">
+                  <div class="font-mono text-[11px] uppercase text-[var(--color-muted-foreground)]">Información Adicional</div>
+                  <div class="border border-[var(--color-border)] divide-y divide-[var(--color-border)]">
+                    @for (info of comp.infoAdicional; track info.nombre) {
+                      <div class="px-3 py-1.5 flex justify-between">
+                        <span class="text-[var(--color-muted-foreground)]">{{ info.nombre }}</span>
+                        <span class="font-mono">{{ info.valor }}</span>
+                      </div>
+                    }
+                  </div>
+                </div>
+              }
+            </div>
+          }
+        </ui-drawer-content>
+
+        <ui-drawer-footer>
+          @if (seleccionado(); as comp) {
+            <ui-button variant="outline" size="sm" (click)="descargarXml(comp)">
+              Descargar XML
+            </ui-button>
+            <ui-button variant="default" size="sm" (click)="descargarRide(comp)">
+              Descargar RIDE (PDF)
+            </ui-button>
+          }
+        </ui-drawer-footer>
+      </ui-drawer>
     </div>
   `,
 })
@@ -255,12 +412,16 @@ export class DashboardComponent implements OnInit {
   readonly loading = signal<boolean>(true);
   readonly syncing = signal<boolean>(false);
 
+  readonly drawerOpen = signal<boolean>(false);
+  readonly seleccionado = signal<ComprobanteDetallado | null>(null);
+
   readonly columns: TableColumn[] = [
     { field: 'tipoComprobanteDescripcion', header: 'Comprobante / Serie', sortable: true },
     { field: 'razonSocialComprador', header: 'Adquirente / Receptor', sortable: true },
     { field: 'fechaEmision', header: 'Emisión' },
     { field: 'estado', header: 'Estado SRI' },
     { field: 'total', header: 'Importe Total', align: 'right' },
+    { field: 'acciones', header: 'Acciones', align: 'right' },
   ];
 
   readonly totalFacturado = computed(() =>
@@ -317,6 +478,49 @@ export class DashboardComponent implements OnInit {
       error: () => {
         this.syncing.set(false);
         this.toast.error('Error al sincronizar con el SRI');
+      },
+    });
+  }
+
+  inspeccionar(row: Comprobante): void {
+    this.seleccionado.set({
+      ...row,
+      detalles: [],
+      infoAdicional: [],
+      xmlDisponible: true,
+    });
+    this.drawerOpen.set(true);
+    this.sriApi.getComprobanteDetalle(row.claveAcceso, row).subscribe((det) => {
+      this.seleccionado.set(det);
+    });
+  }
+
+  descargarRide(row: Comprobante): void {
+    this.toast.info(`Generando RIDE PDF para ${row.establecimiento}-${row.puntoEmision}-${row.secuencial}`);
+    this.sriApi.downloadRide(row.claveAcceso).subscribe({
+      next: (blob) => {
+        const blobUrl = URL.createObjectURL(blob);
+        window.open(blobUrl, '_blank');
+      },
+      error: () => {
+        this.toast.error('No se pudo descargar el RIDE PDF de este comprobante');
+      },
+    });
+  }
+
+  descargarXml(row: Comprobante): void {
+    this.toast.info(`Descargando XML XAdES-BES (${row.claveAcceso.slice(0, 12)}...)`);
+    this.sriApi.downloadXml(row.claveAcceso).subscribe({
+      next: (blob) => {
+        const blobUrl = URL.createObjectURL(blob);
+        const a = document.createElement('a');
+        a.href = blobUrl;
+        a.download = `${row.claveAcceso}.xml`;
+        a.click();
+        URL.revokeObjectURL(blobUrl);
+      },
+      error: () => {
+        this.toast.error('XML autorizado no disponible para este comprobante');
       },
     });
   }

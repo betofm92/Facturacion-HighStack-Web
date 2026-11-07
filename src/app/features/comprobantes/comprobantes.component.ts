@@ -140,22 +140,25 @@ import { environment } from '../../../environments/environment';
             emptyMessage="No existen comprobantes con los criterios seleccionados."
           >
             <ng-template tableCell="tipoComprobanteDescripcion" let-value let-row="row">
-              <div class="flex flex-col">
+              <div class="flex flex-col cursor-pointer group" (click)="inspeccionar(row)">
                 <div class="flex items-center gap-1.5">
                   <span class="font-mono text-[11px] px-1.5 py-0.5 border border-[var(--color-border)] bg-[var(--color-muted)]">
                     {{ row.tipoComprobante }}
                   </span>
-                  <span class="font-medium text-xs">{{ value }}</span>
+                  <span class="font-medium text-xs group-hover:underline">{{ value }}</span>
                 </div>
-                <span class="font-mono text-[11px] text-[var(--color-muted-foreground)] mt-0.5">
+                <span class="font-mono text-[11px] text-[var(--color-muted-foreground)] mt-0.5 group-hover:text-[var(--color-foreground)] transition-colors">
                   Serie: {{ row.establecimiento }}-{{ row.puntoEmision }}-{{ row.secuencial }}
                 </span>
               </div>
             </ng-template>
 
-            <ng-template tableCell="claveAcceso" let-value>
+            <ng-template tableCell="claveAcceso" let-value let-row="row">
               <div class="flex items-center gap-2">
-                <code class="font-mono text-[11px] text-[var(--color-muted-foreground)] bg-[var(--color-muted)]/50 px-1.5 py-0.5 border border-[var(--color-border)]">
+                <code
+                  class="font-mono text-[11px] text-[var(--color-muted-foreground)] bg-[var(--color-muted)]/50 px-1.5 py-0.5 border border-[var(--color-border)] cursor-pointer hover:border-[var(--color-ring)] hover:text-[var(--color-foreground)] transition-colors"
+                  (click)="inspeccionar(row)"
+                >
                   {{ value.slice(0, 14) }}…{{ value.slice(-10) }}
                 </code>
                 <ui-button variant="ghost" size="xs" (click)="copiarClave(value)">
@@ -165,16 +168,22 @@ import { environment } from '../../../environments/environment';
             </ng-template>
 
             <ng-template tableCell="razonSocialComprador" let-value let-row="row">
-              <div class="flex flex-col">
-                <span class="text-xs font-medium">{{ value }}</span>
+              <div class="flex flex-col cursor-pointer group" (click)="inspeccionar(row)">
+                <span class="text-xs font-medium group-hover:underline">{{ value }}</span>
                 <span class="font-mono text-[11px] text-[var(--color-muted-foreground)]">
                   RUC/CI: {{ row.identificacionComprador }}
                 </span>
               </div>
             </ng-template>
 
+            <ng-template tableCell="fechaEmision" let-value let-row="row">
+              <span class="font-mono text-xs cursor-pointer hover:underline" (click)="inspeccionar(row)">
+                {{ value | date:'dd/MM/yyyy' }}
+              </span>
+            </ng-template>
+
             <ng-template tableCell="estado" let-value let-row="row">
-              <div class="flex flex-col items-start gap-1">
+              <div class="flex flex-col items-start gap-1 cursor-pointer" (click)="inspeccionar(row)">
                 <ui-badge
                   [color]="value === 'AUTORIZADO' ? 'success' : value === 'DEVUELTA' || value === 'RECHAZADO' ? 'destructive' : 'warning'"
                   variant="soft"
@@ -190,7 +199,7 @@ import { environment } from '../../../environments/environment';
             </ng-template>
 
             <ng-template tableCell="total" let-value let-row="row">
-              <div class="text-right font-mono tabular-nums">
+              <div class="text-right font-mono tabular-nums cursor-pointer" (click)="inspeccionar(row)">
                 <div class="text-xs font-semibold">{{ value | currency:'USD':'symbol':'1.2-2' }}</div>
                 <div class="text-[10px] text-[var(--color-muted-foreground)]">
                   IVA: {{ row.totalImpuestos | currency:'USD':'symbol':'1.2-2' }}
@@ -198,15 +207,18 @@ import { environment } from '../../../environments/environment';
               </div>
             </ng-template>
 
-            <ng-template tableCell="Acciones" let-row="row">
+            <ng-template tableCell="acciones" let-row="row">
               <div class="flex items-center justify-end gap-1.5">
                 <ui-button variant="outline" size="xs" (click)="inspeccionar(row)">
-                  Inspeccionar
+                  Ver Detalles
                 </ui-button>
 
                 <ui-dropdown align="end">
                   <ui-button uiDropdownTrigger variant="ghost" size="xs">•••</ui-button>
                   <ui-dropdown-label>Operaciones SRI</ui-dropdown-label>
+                  <ui-dropdown-item (select)="inspeccionar(row)">
+                    Ver Detalles del Comprobante
+                  </ui-dropdown-item>
                   <ui-dropdown-item (select)="verificarEstadoSri(row)">
                     Verificar en WS SRI
                   </ui-dropdown-item>
@@ -280,6 +292,17 @@ import { environment } from '../../../environments/environment';
                 </div>
               </div>
 
+              <div class="grid grid-cols-2 gap-3 font-mono text-[11px]">
+                <div class="p-2.5 border border-[var(--color-border)] bg-[var(--color-muted)]/10">
+                  <span class="text-[var(--color-muted-foreground)] block text-[10px] uppercase">Fecha Emisión</span>
+                  <span>{{ comp.fechaEmision | date:'dd/MM/yyyy' }}</span>
+                </div>
+                <div class="p-2.5 border border-[var(--color-border)] bg-[var(--color-muted)]/10">
+                  <span class="text-[var(--color-muted-foreground)] block text-[10px] uppercase">Autorización SRI</span>
+                  <span>{{ comp.fechaAutorizacion ? (comp.fechaAutorizacion | date:'dd/MM/yyyy HH:mm') : 'Pendiente' }}</span>
+                </div>
+              </div>
+
               <ui-separator />
 
               <div class="space-y-2">
@@ -298,6 +321,10 @@ import { environment } from '../../../environments/environment';
                       <div class="font-mono font-semibold tabular-nums">
                         {{ item.subtotal | currency:'USD' }}
                       </div>
+                    </div>
+                  } @empty {
+                    <div class="p-3 text-center text-[var(--color-muted-foreground)] font-mono text-[11px]">
+                      Sin líneas de detalle adicionales registradas.
                     </div>
                   }
                 </div>
@@ -373,7 +400,7 @@ export class ComprobantesComponent implements OnInit {
     { field: 'fechaEmision', header: 'Emisión' },
     { field: 'estado', header: 'Estado SRI' },
     { field: 'total', header: 'Total USD', align: 'right' },
-    { header: 'Acciones', align: 'right' },
+    { field: 'acciones', header: 'Acciones', align: 'right' },
   ];
 
   ngOnInit(): void {
@@ -411,9 +438,15 @@ export class ComprobantesComponent implements OnInit {
   }
 
   inspeccionar(row: Comprobante): void {
-    this.sriApi.getComprobanteDetalle(row.claveAcceso).subscribe((det) => {
+    this.seleccionado.set({
+      ...row,
+      detalles: [],
+      infoAdicional: [],
+      xmlDisponible: true,
+    });
+    this.drawerOpen.set(true);
+    this.sriApi.getComprobanteDetalle(row.claveAcceso, row).subscribe((det) => {
       this.seleccionado.set(det);
-      this.drawerOpen.set(true);
     });
   }
 
@@ -431,15 +464,33 @@ export class ComprobantesComponent implements OnInit {
   }
 
   descargarRide(row: Comprobante): void {
-    const url = `${environment.apiUrl}/sri/comprobantes/${row.claveAcceso}/ride`;
     this.toast.info(`Generando RIDE PDF para ${row.establecimiento}-${row.puntoEmision}-${row.secuencial}`);
-    window.open(url, '_blank');
+    this.sriApi.downloadRide(row.claveAcceso).subscribe({
+      next: (blob) => {
+        const blobUrl = URL.createObjectURL(blob);
+        window.open(blobUrl, '_blank');
+      },
+      error: () => {
+        this.toast.error('No se pudo descargar el RIDE PDF de este comprobante');
+      },
+    });
   }
 
   descargarXml(row: Comprobante): void {
-    const url = `${environment.apiUrl}/sri/comprobantes/${row.claveAcceso}/xml`;
     this.toast.info(`Descargando XML XAdES-BES (${row.claveAcceso.slice(0, 12)}...)`);
-    window.open(url, '_blank');
+    this.sriApi.downloadXml(row.claveAcceso).subscribe({
+      next: (blob) => {
+        const blobUrl = URL.createObjectURL(blob);
+        const a = document.createElement('a');
+        a.href = blobUrl;
+        a.download = `${row.claveAcceso}.xml`;
+        a.click();
+        URL.revokeObjectURL(blobUrl);
+      },
+      error: () => {
+        this.toast.error('XML autorizado no disponible para este comprobante');
+      },
+    });
   }
 }
 
