@@ -12,6 +12,7 @@ import {
   CardTitleComponent,
   DatepickerComponent,
   InputComponent,
+  LabelComponent,
   ModalComponent,
   ModalContentComponent,
   ModalDescriptionComponent,
@@ -19,15 +20,24 @@ import {
   ModalHeaderComponent,
   ModalTitleComponent,
   OptionComponent,
+  PhoneInputComponent,
+  RadioComponent,
+  RadioGroupComponent,
   SegmentedComponent,
   SegmentedOption,
   SelectComponent,
   SeparatorComponent,
+  SpinnerComponent,
   StepItem,
   StepperComponent,
+  SwitchComponent,
+  TextareaComponent,
+  TimepickerComponent,
+  TimezoneSelectComponent,
   ToastService,
+  checkE164,
 } from '@highstacklabs2026/ui';
-import { Emisor } from '../../core/models/api.models';
+import { ConsultaContribuyenteResponse, Emisor } from '../../core/models/api.models';
 import { SriApiService } from '../../core/services/sri-api.service';
 
 interface LineaDetalle {
@@ -54,6 +64,7 @@ interface LineaDetalle {
     CardFooterComponent,
     DatepickerComponent,
     InputComponent,
+    LabelComponent,
     ModalComponent,
     ModalHeaderComponent,
     ModalTitleComponent,
@@ -62,9 +73,17 @@ interface LineaDetalle {
     ModalFooterComponent,
     SelectComponent,
     OptionComponent,
+    PhoneInputComponent,
+    RadioGroupComponent,
+    RadioComponent,
     SegmentedComponent,
     SeparatorComponent,
+    SpinnerComponent,
     StepperComponent,
+    SwitchComponent,
+    TextareaComponent,
+    TimepickerComponent,
+    TimezoneSelectComponent,
   ],
   template: `
     <div class="space-y-6">
@@ -84,7 +103,13 @@ interface LineaDetalle {
           <ui-button variant="outline" size="sm" (click)="previsualizarXml()">
             Previsualizar XML SRI
           </ui-button>
-          <ui-button variant="default" size="sm" [loading]="emitiendo()" (click)="emitirComprobante()">
+          <ui-button
+            variant="default"
+            size="sm"
+            [loading]="emitiendo()"
+            [disabled]="bloqueoEmision()"
+            (click)="emitirComprobante()"
+          >
             Firmar y Transmitir al SRI
           </ui-button>
         </div>
@@ -140,15 +165,30 @@ interface LineaDetalle {
                   placeholder="001"
                 />
 
+                <ui-datepicker
+                  label="Fecha de Emisión Fiscal"
+                  size="sm"
+                  [(value)]="fechaIso"
+                />
+
+                <ui-timepicker
+                  label="Hora de Emisión (24h)"
+                  size="sm"
+                  [hourFormat]="24"
+                  [minuteStep]="5"
+                  [(value)]="horaEmision"
+                />
+
                 <div class="sm:col-span-2">
-                  <ui-datepicker
-                    label="Fecha de Emisión Fiscal"
+                  <ui-timezone-select
+                    label="Zona Horaria Fiscal (IANA)"
                     size="sm"
-                    [(value)]="fechaIso"
+                    modalTitle="Zona Horaria de Emisión"
+                    [(value)]="zonaHoraria"
                   />
                 </div>
 
-                <div class="sm:col-span-2">
+                <div class="sm:col-span-4">
                   <ui-select label="Forma de Pago SRI (Tabla 24)" size="sm" [(value)]="formaPago">
                     <ui-option value="20">20 · Otros con utilización del sistema financiero</ui-option>
                     <ui-option value="01">01 · Sin utilización del sistema financiero (Efectivo)</ui-option>
@@ -163,34 +203,79 @@ interface LineaDetalle {
           <!-- Sección 2: Datos del Adquirente / Receptor -->
           <ui-card variant="outline">
             <ui-card-header>
-              <ui-card-title>2. Datos del Adquirente / Sujeto Fiscal</ui-card-title>
-              <ui-card-description>Información tributaria para validación en el esquema del SRI.</ui-card-description>
+              <div class="flex flex-wrap items-center justify-between gap-2">
+                <div>
+                  <ui-card-title>2. Datos del Adquirente / Sujeto Fiscal</ui-card-title>
+                  <ui-card-description>Información tributaria para validación en el esquema del SRI.</ui-card-description>
+                </div>
+
+                <div class="flex items-center gap-2">
+                  @if (consultandoSri()) {
+                    <div class="flex items-center gap-1.5 text-xs font-mono text-[var(--color-muted-foreground)]">
+                      <ui-spinner size="sm" />
+                      <span>Consultando Catastro SRI…</span>
+                    </div>
+                  } @else if (badgeConfirmacionSri()) {
+                    <ui-badge color="success" variant="soft" size="sm" [dot]="true">
+                      {{ badgeConfirmacionSri() }}
+                    </ui-badge>
+                  }
+                </div>
+              </div>
             </ui-card-header>
-            <ui-card-content>
-              <div class="grid grid-cols-1 sm:grid-cols-3 gap-4">
-                <ui-select label="Tipo de Identificación" size="sm" [(value)]="tipoIdentificacion">
-                  <ui-option value="04">04 · RUC (13 dígitos)</ui-option>
-                  <ui-option value="05">05 · Cédula de Identidad (10 dígitos)</ui-option>
-                  <ui-option value="06">06 · Pasaporte</ui-option>
-                  <ui-option value="07">07 · Venta a Consumidor Final</ui-option>
-                </ui-select>
+            <ui-card-content class="space-y-4">
+              <div class="grid grid-cols-1 sm:grid-cols-12 gap-4 items-start">
+                <div class="sm:col-span-4">
+                  <ui-select
+                    label="Tipo de Identificación"
+                    size="sm"
+                    [value]="tipoIdentificacion()"
+                    (valueChange)="onTipoIdentificacionChange($event)"
+                  >
+                    <ui-option value="04">04 · RUC (13 dígitos)</ui-option>
+                    <ui-option value="05">05 · Cédula de Identidad (10 dígitos)</ui-option>
+                    <ui-option value="06">06 · Pasaporte</ui-option>
+                    <ui-option value="07">07 · Venta a Consumidor Final</ui-option>
+                  </ui-select>
+                </div>
 
-                <ui-input
-                  label="Número de Identificación"
-                  size="sm"
-                  [(value)]="identificacionComprador"
-                  placeholder="1790016919001"
-                />
+                <div class="sm:col-span-4">
+                  <ui-label for="identificacion-comprador-input">Número de Identificación</ui-label>
+                  <div class="flex items-start gap-2">
+                    <div class="flex-1 min-w-0">
+                      <ui-input
+                        id="identificacion-comprador-input"
+                        size="sm"
+                        [value]="identificacionComprador()"
+                        (valueChange)="onIdentificacionChange($event)"
+                        [error]="errorIdentificacion()"
+                        [hint]="!errorIdentificacion() && estadoDetalleSri() ? estadoDetalleSri() : ''"
+                        placeholder="Ej: 0750138141001"
+                      />
+                    </div>
+                    <ui-button
+                      variant="outline"
+                      size="sm"
+                      class="shrink-0"
+                      [loading]="consultandoSri()"
+                      (click)="validarIdentificacionManual()"
+                    >
+                      Validar
+                    </ui-button>
+                  </div>
+                </div>
 
-                <ui-input
-                  label="Correo para Envío RIDE/XML"
-                  type="email"
-                  size="sm"
-                  [(value)]="emailComprador"
-                  placeholder="facturacion@cliente.com"
-                />
+                <div class="sm:col-span-4">
+                  <ui-input
+                    label="Correo para Envío RIDE/XML"
+                    type="email"
+                    size="sm"
+                    [(value)]="emailComprador"
+                    placeholder="facturacion@cliente.com"
+                  />
+                </div>
 
-                <div class="sm:col-span-2">
+                <div class="sm:col-span-8">
                   <ui-input
                     label="Razón Social / Apellidos y Nombres"
                     size="sm"
@@ -199,12 +284,72 @@ interface LineaDetalle {
                   />
                 </div>
 
-                <ui-input
-                  label="Dirección Fiscal"
-                  size="sm"
-                  [(value)]="direccionComprador"
-                  placeholder="Av. General Enríquez, Quito"
-                />
+                <div class="sm:col-span-4">
+                  <ui-phone-input
+                    label="Teléfono Contacto (E.164)"
+                    locale="es-EC"
+                    defaultCountry="EC"
+                    [preferredCountries]="['EC', 'CO', 'PE', 'US']"
+                    size="sm"
+                    [(value)]="telefonoComprador"
+                    (countryChange)="paisComprador.set($event)"
+                  />
+                </div>
+
+                <div class="sm:col-span-12">
+                  <ui-input
+                    label="Dirección Fiscal"
+                    size="sm"
+                    [(value)]="direccionComprador"
+                    placeholder="EL ORO / MACHALA / JULIO MAYORGA G SN Y BOLIVAR PAREDES"
+                  />
+                </div>
+
+                @if (datosCatastroSri(); as infoSri) {
+                  @if (infoSri.tipoContribuyente || infoSri.regimen || infoSri.nombreComercial || infoSri.actividadEconomica) {
+                    <div class="sm:col-span-12 p-3 border border-[var(--color-border)] bg-[var(--color-muted)]/20 grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-2.5 text-xs font-mono">
+                      @if (infoSri.nombreComercial) {
+                        <div>
+                          <span class="block text-[10px] uppercase text-[var(--color-muted-foreground)]">Nombre Comercial</span>
+                          <span class="font-medium text-[var(--color-foreground)]">{{ infoSri.nombreComercial }}</span>
+                        </div>
+                      }
+                      @if (infoSri.tipoContribuyente) {
+                        <div>
+                          <span class="block text-[10px] uppercase text-[var(--color-muted-foreground)]">Tipo Contribuyente</span>
+                          <span class="font-medium text-[var(--color-foreground)]">{{ infoSri.tipoContribuyente }}</span>
+                        </div>
+                      }
+                      @if (infoSri.regimen) {
+                        <div>
+                          <span class="block text-[10px] uppercase text-[var(--color-muted-foreground)]">Régimen / Contabilidad</span>
+                          <span class="font-medium text-[var(--color-foreground)]">
+                            {{ infoSri.regimen }} · Obligado: {{ infoSri.obligadoContabilidad || 'NO' }}
+                          </span>
+                        </div>
+                      }
+                      @if (infoSri.actividadEconomica) {
+                        <div class="sm:col-span-2 lg:col-span-1">
+                          <span class="block text-[10px] uppercase text-[var(--color-muted-foreground)]">Actividad Económica</span>
+                          <span class="font-medium text-[var(--color-foreground)] line-clamp-1" [title]="infoSri.actividadEconomica">
+                            {{ infoSri.actividadEconomica }}
+                          </span>
+                        </div>
+                      }
+                    </div>
+                  }
+                }
+
+                <div class="sm:col-span-12">
+                  <ui-textarea
+                    label="Observaciones / Glosa Adicional (RIDE)"
+                    [rows]="2"
+                    [autoGrow]="true"
+                    [(value)]="observacionesRide"
+                    placeholder="Ej: Orden de Compra #OC-2026-99412 · Condiciones de entrega..."
+                    hint="Se inyecta automáticamente como campo adicional en el XML y RIDE PDF."
+                  />
+                </div>
               </div>
             </ui-card-content>
           </ui-card>
@@ -313,13 +458,39 @@ interface LineaDetalle {
 
               <ui-separator />
 
+              <!-- Modo de Transmisión SOAP (RadioGroup) -->
+              <div class="space-y-2">
+                <ui-label>Modo de Despacho SOAP SRI</ui-label>
+                <ui-radio-group [(value)]="modoDespacho" appearance="card" orientation="vertical" size="sm">
+                  <ui-radio
+                    value="sincrono"
+                    label="Recepción + Autorización Síncrona"
+                    description="Espera respuesta inmediata del WS SRI (~2s)"
+                  />
+                  <ui-radio
+                    value="cola"
+                    label="Cola Asíncrona BullMQ / Redis"
+                    description="Encola firma y notifica vía Webhook HMAC"
+                  />
+                </ui-radio-group>
+              </div>
+
+              <ui-switch
+                label="Notificar RIDE PDF + XML por correo"
+                description="Envío automático al autorizar"
+                size="sm"
+                [(checked)]="notificarPorCorreo"
+              />
+
+              <ui-separator />
+
               <div class="p-3 border border-[var(--color-border)] bg-[var(--color-muted)]/30 space-y-1.5 text-xs">
                 <div class="flex items-center justify-between">
                   <span class="font-mono text-[11px] text-[var(--color-muted-foreground)]">CERTIFICADO P12</span>
                   <ui-badge color="success" variant="soft" size="sm">LISTO</ui-badge>
                 </div>
                 <div class="font-mono text-[11px] truncate">
-                  RUC: {{ rucEmisorSeleccionado() }}
+                  RUC: {{ rucEmisorSeleccionado() }} · {{ horaEmision() }} ({{ zonaHoraria() }})
                 </div>
                 <div class="text-[11px] text-[var(--color-muted-foreground)]">
                   El XML se firmará con estándar XAdES-BES y se enviará al ambiente {{ sriApi.activeAmbiente() === '2' ? 'PRODUCCIÓN' : 'PRUEBAS' }}.
@@ -327,7 +498,13 @@ interface LineaDetalle {
               </div>
             </ui-card-content>
             <ui-card-footer>
-              <ui-button variant="default" [full]="true" [loading]="emitiendo()" (click)="emitirComprobante()">
+              <ui-button
+                variant="default"
+                [full]="true"
+                [loading]="emitiendo()"
+                [disabled]="bloqueoEmision()"
+                (click)="emitirComprobante()"
+              >
                 Firmar y Emitir Comprobante
               </ui-button>
             </ui-card-footer>
@@ -367,16 +544,44 @@ export class EmisionComponent implements OnInit {
   readonly establecimiento = signal<string>('001');
   readonly puntoEmision = signal<string>('001');
   readonly fechaIso = signal<string>('2026-11-06');
+  readonly horaEmision = signal<string>('09:30');
+  readonly zonaHoraria = signal<string>('America/Guayaquil');
   readonly formaPago = signal<string>('20');
 
   readonly tipoDocumento = signal<string>('01');
   readonly pasoActivo = signal<number>(0);
+  readonly modoDespacho = signal<string>('sincrono');
+  readonly notificarPorCorreo = signal<boolean>(true);
 
   readonly tipoIdentificacion = signal<string>('04');
   readonly identificacionComprador = signal<string>('1790016919001');
   readonly razonSocialComprador = signal<string>('CORPORACION FAVORITA C.A.');
   readonly emailComprador = signal<string>('recepcion.facturas@favorita.com');
+  readonly telefonoComprador = signal<string>('+593987654321');
+  readonly paisComprador = signal<string>('EC');
   readonly direccionComprador = signal<string>('Av. General Enríquez, Sangolquí - Quito');
+  readonly observacionesRide = signal<string>('Orden de Compra corporativa · Emisión electrónica XAdES-BES');
+
+  readonly consultandoSri = signal<boolean>(false);
+  readonly errorIdentificacion = signal<string>('');
+  readonly badgeConfirmacionSri = signal<string>('RUC ACTIVO EN SRI');
+  readonly estadoDetalleSri = signal<string>('Verificado en Catastro SRI');
+  readonly identificacionValida = signal<boolean>(true);
+  readonly datosCatastroSri = signal<ConsultaContribuyenteResponse | null>(null);
+  private consultaSeq = 0;
+
+  readonly telefonoInvalido = computed(() => {
+    const tel = this.telefonoComprador();
+    return tel !== '' && checkE164(tel) !== 'ok';
+  });
+
+  readonly bloqueoEmision = computed(
+    () =>
+      this.telefonoInvalido() ||
+      !this.identificacionValida() ||
+      Boolean(this.errorIdentificacion()) ||
+      this.consultandoSri(),
+  );
 
   readonly items = signal<LineaDetalle[]>([
     {
@@ -404,7 +609,7 @@ export class EmisionComponent implements OnInit {
   readonly steps: StepItem[] = [
     { label: '1. Emisor & Serie' },
     { label: '2. Receptor Fiscal' },
-    { label: '3. firma XAdES-BES' },
+    { label: '3. Firma XAdES-BES' },
   ];
 
   readonly subtotalIva15 = computed(() =>
@@ -424,6 +629,207 @@ export class EmisionComponent implements OnInit {
       if (res.data.length > 0) {
         this.rucEmisorSeleccionado.set(res.data[0].ruc);
       }
+    });
+  }
+
+  onTipoIdentificacionChange(tipo: string): void {
+    this.tipoIdentificacion.set(tipo);
+    this.errorIdentificacion.set('');
+
+    if (tipo === '07') {
+      this.identificacionComprador.set('9999999999999');
+      this.razonSocialComprador.set('CONSUMIDOR FINAL');
+      this.badgeConfirmacionSri.set('CONSUMIDOR FINAL');
+      this.estadoDetalleSri.set('Identificación estándar SRI Consumidor Final');
+      this.identificacionValida.set(true);
+      return;
+    }
+
+    const actual = this.identificacionComprador().trim();
+    if (tipo === '06') {
+      const ok = actual.length >= 5 && actual.length <= 20;
+      this.identificacionValida.set(ok);
+      this.badgeConfirmacionSri.set(ok ? 'PASAPORTE VÁLIDO' : '');
+      this.estadoDetalleSri.set('');
+      if (!ok && actual.length > 0) {
+        this.errorIdentificacion.set('El pasaporte debe tener entre 5 y 20 caracteres');
+      }
+      return;
+    }
+
+    this.onIdentificacionChange(actual);
+  }
+
+  onIdentificacionChange(valor: string): void {
+    this.identificacionComprador.set(valor);
+    const trimmed = String(valor || '').trim();
+
+    if (!trimmed) {
+      this.consultaSeq++;
+      this.consultandoSri.set(false);
+      this.datosCatastroSri.set(null);
+      this.badgeConfirmacionSri.set('');
+      this.estadoDetalleSri.set('Ingrese 10 dígitos (Cédula) o 13 dígitos (RUC)');
+      this.errorIdentificacion.set('');
+      this.identificacionValida.set(false);
+      return;
+    }
+
+    // Caso 1: Consumidor Final (9999999999999)
+    if (trimmed === '9999999999999') {
+      this.consultaSeq++;
+      this.consultandoSri.set(false);
+      this.datosCatastroSri.set(null);
+      this.tipoIdentificacion.set('07');
+      this.razonSocialComprador.set('CONSUMIDOR FINAL');
+      this.direccionComprador.set('ECUADOR');
+      this.errorIdentificacion.set('');
+      this.badgeConfirmacionSri.set('CONSUMIDOR FINAL');
+      this.estadoDetalleSri.set('Identificación estándar del SRI para Consumidor Final');
+      this.identificacionValida.set(true);
+      return;
+    }
+
+    // Caso 2: 10 dígitos numéricos -> Cédula (05) + consulta automática al SRI
+    if (/^\d{10}$/.test(trimmed)) {
+      this.tipoIdentificacion.set('05');
+      this.ejecutarConsultaSri(trimmed);
+      return;
+    }
+
+    // Caso 3: 13 dígitos numéricos (distinto de 9999999999999) -> RUC (04) + consulta automática al SRI
+    if (/^\d{13}$/.test(trimmed)) {
+      this.tipoIdentificacion.set('04');
+      this.ejecutarConsultaSri(trimmed);
+      return;
+    }
+
+    // Si es Pasaporte (06) y contiene letras o longitud válida
+    if (this.tipoIdentificacion() === '06' && !/^\d+$/.test(trimmed)) {
+      const ok = trimmed.length >= 5 && trimmed.length <= 20;
+      this.datosCatastroSri.set(null);
+      this.identificacionValida.set(ok);
+      this.errorIdentificacion.set(ok ? '' : 'El pasaporte debe tener entre 5 y 20 caracteres');
+      this.badgeConfirmacionSri.set(ok ? 'PASAPORTE VÁLIDO' : '');
+      this.estadoDetalleSri.set('');
+      return;
+    }
+
+    // Mientras escribe una longitud incompleta o inválida para Cédula (10) / RUC (13)
+    this.consultaSeq++;
+    this.consultandoSri.set(false);
+    this.datosCatastroSri.set(null);
+    this.badgeConfirmacionSri.set('');
+    this.estadoDetalleSri.set('Ingrese 10 dígitos (Cédula) o 13 dígitos (RUC) para consultar en SRI');
+    this.identificacionValida.set(false);
+    if (trimmed.length > 13 || (trimmed.length > 0 && !/^\d+$/.test(trimmed) && this.tipoIdentificacion() !== '06')) {
+      this.errorIdentificacion.set('La identificación para RUC/Cédula debe contener 10 o 13 dígitos numéricos');
+    } else {
+      this.errorIdentificacion.set('');
+    }
+  }
+
+  validarIdentificacionManual(): void {
+    const trimmed = this.identificacionComprador().trim();
+    if (!trimmed) {
+      this.errorIdentificacion.set('Debe proporcionar un número de RUC o Cédula');
+      this.identificacionValida.set(false);
+      this.badgeConfirmacionSri.set('');
+      return;
+    }
+
+    if (trimmed === '9999999999999') {
+      this.onIdentificacionChange(trimmed);
+      return;
+    }
+
+    if (/^\d{10}$/.test(trimmed)) {
+      this.tipoIdentificacion.set('05');
+    } else if (/^\d{13}$/.test(trimmed)) {
+      this.tipoIdentificacion.set('04');
+    }
+
+    this.ejecutarConsultaSri(trimmed);
+  }
+
+  private ejecutarConsultaSri(identificacion: string): void {
+    const reqId = ++this.consultaSeq;
+    this.consultandoSri.set(true);
+    this.errorIdentificacion.set('');
+    this.badgeConfirmacionSri.set('');
+    this.estadoDetalleSri.set('Verificando en Catastro del SRI…');
+
+    this.sriApi.consultarContribuyente(identificacion).subscribe({
+      next: (rawRes: ConsultaContribuyenteResponse) => {
+        if (reqId !== this.consultaSeq) return;
+        this.consultandoSri.set(false);
+
+        const res: ConsultaContribuyenteResponse = (rawRes as any)?.data ?? rawRes;
+
+        if (res.tipoIdentificacion) {
+          this.tipoIdentificacion.set(res.tipoIdentificacion);
+        }
+
+        if (!res.formatoValido || !res.existeEnSri) {
+          this.datosCatastroSri.set(null);
+          this.identificacionValida.set(false);
+          this.badgeConfirmacionSri.set('');
+          this.estadoDetalleSri.set('');
+          this.errorIdentificacion.set(
+            res.errorValidacion ||
+              res.mensaje ||
+              'Identificación inválida o no consta en el Catastro del SRI',
+          );
+          return;
+        }
+
+        this.datosCatastroSri.set(res);
+        this.identificacionValida.set(true);
+        this.errorIdentificacion.set('');
+
+        if (res.tipoIdentificacion === '07') {
+          this.badgeConfirmacionSri.set('CONSUMIDOR FINAL');
+        } else if (res.tipoIdentificacion === '05') {
+          this.badgeConfirmacionSri.set(
+            res.estadoContribuyente
+              ? `CÉDULA ${res.estadoContribuyente} EN SRI`
+              : 'CÉDULA VÁLIDA',
+          );
+        } else {
+          this.badgeConfirmacionSri.set(
+            res.estadoContribuyente
+              ? `RUC ${res.estadoContribuyente} EN SRI`
+              : 'RUC ACTIVO EN SRI',
+          );
+        }
+
+        this.estadoDetalleSri.set(res.mensaje || 'Verificado en Catastro SRI');
+
+        if (res.razonSocial) {
+          this.razonSocialComprador.set(res.razonSocial);
+        }
+        if (res.direccionMatriz) {
+          this.direccionComprador.set(res.direccionMatriz);
+        }
+        if (res.emailSugerido) {
+          this.emailComprador.set(res.emailSugerido);
+        }
+        if (res.telefonoSugerido) {
+          this.telefonoComprador.set(res.telefonoSugerido);
+        }
+      },
+      error: (err) => {
+        if (reqId !== this.consultaSeq) return;
+        this.consultandoSri.set(false);
+        this.datosCatastroSri.set(null);
+        this.identificacionValida.set(false);
+        this.badgeConfirmacionSri.set('');
+        this.estadoDetalleSri.set('');
+        const msg =
+          err?.error?.message ||
+          'No se pudo validar la identificación en el servidor SRI';
+        this.errorIdentificacion.set(Array.isArray(msg) ? msg.join(', ') : msg);
+      },
     });
   }
 
@@ -466,6 +872,21 @@ export class EmisionComponent implements OnInit {
     const [yyyy, mm, dd] = (this.fechaIso() || '2026-11-06').split('-');
     const fechaEmisionSri = `${dd}/${mm}/${yyyy}`;
 
+    const infoAdicional = [
+      { nombre: 'Email', valor: this.emailComprador() },
+      { nombre: 'Dirección', valor: this.direccionComprador() },
+    ];
+    if (this.telefonoComprador()) {
+      infoAdicional.push({ nombre: 'Teléfono', valor: this.telefonoComprador() });
+    }
+    if (this.observacionesRide()) {
+      infoAdicional.push({ nombre: 'Observaciones', valor: this.observacionesRide() });
+    }
+    infoAdicional.push({
+      nombre: 'Timbrado',
+      valor: `${this.horaEmision()} (${this.zonaHoraria()})`,
+    });
+
     return {
       ambiente: this.sriApi.activeAmbiente(),
       tipoEmision: '1',
@@ -485,6 +906,7 @@ export class EmisionComponent implements OnInit {
         razonSocial: this.razonSocialComprador(),
         direccion: this.direccionComprador(),
         email: this.emailComprador(),
+        telefono: this.telefonoComprador(),
       },
       detalles: this.items().map((item) => {
         const base = +(item.cantidad * item.precioUnitario - item.descuento).toFixed(2);
@@ -514,10 +936,7 @@ export class EmisionComponent implements OnInit {
           unidadTiempo: 'dias',
         },
       ],
-      infoAdicional: [
-        { nombre: 'Email', valor: this.emailComprador() },
-        { nombre: 'Dirección', valor: this.direccionComprador() },
-      ],
+      infoAdicional,
       _totals: {
         subtotal: this.subtotalIva15(),
         iva: this.totalIva(),
@@ -535,6 +954,17 @@ export class EmisionComponent implements OnInit {
   }
 
   emitirComprobante(): void {
+    if (!this.identificacionValida() || this.errorIdentificacion()) {
+      this.toast.warning(
+        this.errorIdentificacion() ||
+          'Ingresa un RUC (13 dígitos) o Cédula (10 dígitos) válida antes de emitir',
+      );
+      return;
+    }
+    if (this.telefonoInvalido()) {
+      this.toast.warning('Verifica la longitud del número telefónico E.164 antes de emitir');
+      return;
+    }
     this.emitiendo.set(true);
     this.pasoActivo.set(2);
     const dto = this.construirDto();

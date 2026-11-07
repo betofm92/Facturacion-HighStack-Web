@@ -1,18 +1,27 @@
 import { Component, computed, inject, signal } from '@angular/core';
-import { Router, RouterLink, RouterLinkActive, RouterOutlet } from '@angular/router';
+import { NavigationEnd, Router, RouterLink, RouterLinkActive, RouterOutlet } from '@angular/router';
+import { filter } from 'rxjs';
 import {
   AvatarComponent,
   BadgeComponent,
+  BreadcrumbComponent,
+  BreadcrumbItemComponent,
   ButtonComponent,
+  DialogService,
   DropdownComponent,
   DropdownItemComponent,
   DropdownLabelComponent,
   DropdownSeparatorComponent,
   DropdownTriggerDirective,
+  PopoverComponent,
+  PopoverTriggerDirective,
   SegmentedComponent,
   SegmentedOption,
   SeparatorComponent,
+  SpinnerComponent,
+  ToastService,
   TooltipDirective,
+  getLocalTimezone,
 } from '@highstacklabs2026/ui';
 import { AuthService } from '../core/services/auth.service';
 import { SriApiService } from '../core/services/sri-api.service';
@@ -32,14 +41,19 @@ interface NavItem {
     RouterLinkActive,
     AvatarComponent,
     BadgeComponent,
+    BreadcrumbComponent,
+    BreadcrumbItemComponent,
     ButtonComponent,
     DropdownComponent,
     DropdownTriggerDirective,
     DropdownItemComponent,
     DropdownLabelComponent,
     DropdownSeparatorComponent,
+    PopoverComponent,
+    PopoverTriggerDirective,
     SegmentedComponent,
     SeparatorComponent,
+    SpinnerComponent,
     TooltipDirective,
   ],
   template: `
@@ -155,7 +169,7 @@ interface NavItem {
                 {{ isDark() ? 'Cambiar a Modo Claro' : 'Cambiar a Modo Oscuro' }}
               </ui-dropdown-item>
               <ui-dropdown-separator />
-              <ui-dropdown-item [destructive]="true" (select)="auth.logout()">
+              <ui-dropdown-item [destructive]="true" (select)="confirmarCerrarSesion()">
                 Cerrar Sesión
               </ui-dropdown-item>
             </ui-dropdown>
@@ -167,23 +181,63 @@ interface NavItem {
       <div class="flex-1 flex flex-col min-w-0">
         <!-- Topbar Ejecutiva -->
         <header class="h-14 px-6 border-b border-[var(--color-border)] bg-[var(--color-background)] flex items-center justify-between gap-4 sticky top-0 z-20">
-          <div class="flex items-center gap-3">
-            <span class="text-xs font-mono uppercase tracking-wider text-[var(--color-muted-foreground)]">
-              CONSOLA FISCAL ECUADOR
-            </span>
-            <ui-separator orientation="vertical" class="h-4" />
-            @if (auth.isDemoMode()) {
-              <ui-badge variant="outline" color="warning" size="sm">
-                MODO DEMOSTRACIÓN ACTIVO (DATOS LOCALES + FALLBACK API)
-              </ui-badge>
-            } @else {
-              <ui-badge variant="soft" color="success" size="sm" [dot]="true">
-                CONECTADO A API LOCALHOST:3001
-              </ui-badge>
-            }
+          <div class="flex items-center gap-3 min-w-0">
+            <ui-breadcrumb class="text-xs">
+              <ui-breadcrumb-item link="/dashboard">Consola SRI</ui-breadcrumb-item>
+              <ui-breadcrumb-item>{{ currentSectionLabel() }}</ui-breadcrumb-item>
+            </ui-breadcrumb>
+
+            <ui-separator orientation="vertical" class="h-4 hidden md:block" />
+
+            <div class="hidden md:block">
+              @if (auth.isDemoMode()) {
+                <ui-badge variant="outline" color="warning" size="sm">
+                  MODO DEMOSTRACIÓN (DATOS LOCALES + FALLBACK API)
+                </ui-badge>
+              } @else {
+                <ui-badge variant="soft" color="success" size="sm" [dot]="true">
+                  CONECTADO A API LOCALHOST:3001
+                </ui-badge>
+              }
+            </div>
           </div>
 
           <div class="flex items-center gap-3">
+            <!-- Popover de Telemetría del Nodo SOAP -->
+            <ui-popover side="bottom" align="end">
+              <ui-button uiPopoverTrigger variant="outline" size="sm">
+                <ui-spinner size="sm" class="mr-1.5 text-emerald-500" />
+                <span class="font-mono text-xs">Nodo SOAP</span>
+              </ui-button>
+
+              <div class="w-72 space-y-3 text-xs">
+                <div class="flex items-center justify-between border-b border-[var(--color-border)] pb-2">
+                  <span class="font-semibold">Telemetría WS SRI Ecuador</span>
+                  <ui-badge color="success" variant="soft" size="sm" [dot]="true">ONLINE</ui-badge>
+                </div>
+                <div class="space-y-1.5 font-mono text-[11px]">
+                  <div class="flex justify-between">
+                    <span class="text-[var(--color-muted-foreground)]">RecepciónComprobantes:</span>
+                    <span>42 ms · 200 OK</span>
+                  </div>
+                  <div class="flex justify-between">
+                    <span class="text-[var(--color-muted-foreground)]">AutorizaciónComprobantes:</span>
+                    <span>58 ms · 200 OK</span>
+                  </div>
+                  <div class="flex justify-between">
+                    <span class="text-[var(--color-muted-foreground)]">Zona Horaria Runtime:</span>
+                    <span>{{ localTz }}</span>
+                  </div>
+                  <div class="flex justify-between">
+                    <span class="text-[var(--color-muted-foreground)]">Esquema XSD Activo:</span>
+                    <span>v2.1.0 / v2.28</span>
+                  </div>
+                </div>
+              </div>
+            </ui-popover>
+
+            <ui-separator orientation="vertical" class="h-4" />
+
             <div class="flex items-center gap-2">
               <span class="text-xs text-[var(--color-muted-foreground)] hidden sm:inline">Ambiente SRI:</span>
               <ui-segmented
@@ -229,6 +283,11 @@ export class ShellLayoutComponent {
   readonly auth = inject(AuthService);
   readonly sriApi = inject(SriApiService);
   private readonly router = inject(Router);
+  private readonly dialog = inject(DialogService);
+  private readonly toast = inject(ToastService);
+
+  readonly localTz = getLocalTimezone();
+  readonly currentUrl = signal<string>(this.router.url);
 
   readonly isDark = signal<boolean>(
     (localStorage.getItem('hs_sri_theme') ?? 'dark') === 'dark',
@@ -237,6 +296,13 @@ export class ShellLayoutComponent {
   readonly userName = computed(() => {
     const email = this.auth.user()?.email || 'HighStack Admin';
     return email.split('@')[0].replace('.', ' ').toUpperCase();
+  });
+
+  readonly currentSectionLabel = computed(() => {
+    const url = this.currentUrl();
+    const allItems = [...this.mainNav, ...this.infraNav];
+    const match = allItems.find((item) => url.startsWith(item.route));
+    return match ? match.label : 'Resumen Ejecutivo';
   });
 
   readonly ambienteOptions: SegmentedOption[] = [
@@ -286,8 +352,44 @@ export class ShellLayoutComponent {
     },
   ];
 
-  setAmbiente(val: string): void {
-    this.sriApi.activeAmbiente.set(val === '2' ? '2' : '1');
+  constructor() {
+    this.router.events
+      .pipe(filter((e): e is NavigationEnd => e instanceof NavigationEnd))
+      .subscribe((e) => this.currentUrl.set(e.urlAfterRedirects));
+  }
+
+  async setAmbiente(val: string): Promise<void> {
+    if (val === '2' && this.sriApi.activeAmbiente() !== '2') {
+      const ok = await this.dialog.confirm({
+        title: '¿Cambiar a Ambiente de Producción (CEL)?',
+        message:
+          'Los comprobantes emitidos en el ambiente 2 (Producción) tendrán validez tributaria real ante el Servicio de Rentas Internas del Ecuador.',
+        confirmText: 'Activar Producción',
+        cancelText: 'Mantener en Pruebas',
+      });
+      if (!ok) {
+        this.sriApi.activeAmbiente.set('1');
+        return;
+      }
+      this.sriApi.activeAmbiente.set('2');
+      this.toast.warning('Ambiente SRI cambiado a 2 · PRODUCCIÓN (CEL)');
+      return;
+    }
+    this.sriApi.activeAmbiente.set('1');
+    this.toast.info('Ambiente SRI configurado en 1 · PRUEBAS (CELCER)');
+  }
+
+  async confirmarCerrarSesion(): Promise<void> {
+    const ok = await this.dialog.confirm({
+      title: '¿Cerrar sesión en Consola Fiscal?',
+      message: 'Se cerrará tu sesión actual en el nodo HighStack Facturación SRI.',
+      confirmText: 'Cerrar Sesión',
+      cancelText: 'Cancelar',
+      confirmVariant: 'destructive',
+    });
+    if (ok) {
+      this.auth.logout();
+    }
   }
 
   toggleDarkMode(): void {

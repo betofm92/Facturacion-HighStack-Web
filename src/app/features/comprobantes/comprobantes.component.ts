@@ -7,6 +7,7 @@ import {
   CardComponent,
   CardContentComponent,
   DatepickerComponent,
+  DialogService,
   DrawerComponent,
   DrawerContentComponent,
   DrawerDescriptionComponent,
@@ -23,10 +24,12 @@ import {
   PaginationComponent,
   SelectComponent,
   SeparatorComponent,
+  SkeletonComponent,
   TableCellDirective,
   TableColumn,
   TableComponent,
   ToastService,
+  TooltipDirective,
 } from '@highstacklabs2026/ui';
 import { Comprobante, ComprobanteDetallado } from '../../core/models/api.models';
 import { SriApiService } from '../../core/services/sri-api.service';
@@ -58,8 +61,10 @@ import { environment } from '../../../environments/environment';
     OptionComponent,
     PaginationComponent,
     SeparatorComponent,
+    SkeletonComponent,
     TableComponent,
     TableCellDirective,
+    TooltipDirective,
   ],
   template: `
     <div class="space-y-6">
@@ -114,8 +119,9 @@ import { environment } from '../../../environments/environment';
 
             <ui-datepicker
               label="Fecha Emisión Desde"
-              placeholder="Seleccionar fecha"
+              placeholder="Seleccionar o escribir"
               size="sm"
+              [typeable]="true"
               [(value)]="filtroFechaDesde"
             />
 
@@ -161,7 +167,12 @@ import { environment } from '../../../environments/environment';
                 >
                   {{ value.slice(0, 14) }}…{{ value.slice(-10) }}
                 </code>
-                <ui-button variant="ghost" size="xs" (click)="copiarClave(value)">
+                <ui-button
+                  variant="ghost"
+                  size="xs"
+                  uiTooltip="Copiar Clave de Acceso (49 dígitos)"
+                  (click)="copiarClave(value)"
+                >
                   Copiar
                 </ui-button>
               </div>
@@ -241,7 +252,14 @@ import { environment } from '../../../environments/environment';
             <span class="text-xs text-[var(--color-muted-foreground)] font-mono">
               Mostrando {{ comprobantes().length }} comprobantes electrónicos
             </span>
-            <ui-pagination [(page)]="page" [totalPages]="totalPages()" size="sm" variant="compact" />
+            <ui-pagination
+              [(page)]="page"
+              [totalPages]="totalPages()"
+              [(pageSize)]="pageSize"
+              [pageSizeOptions]="[10, 20, 50]"
+              size="sm"
+              variant="compact"
+            />
           </div>
         </ui-card-content>
       </ui-card>
@@ -309,25 +327,32 @@ import { environment } from '../../../environments/environment';
                 <div class="font-mono text-[11px] uppercase text-[var(--color-muted-foreground)]">
                   Líneas de Detalle ({{ comp.detalles.length }})
                 </div>
-                <div class="border border-[var(--color-border)] divide-y divide-[var(--color-border)]">
-                  @for (item of comp.detalles; track item.id) {
-                    <div class="p-2.5 flex items-center justify-between gap-3">
-                      <div>
-                        <div class="font-medium">{{ item.descripcion }}</div>
-                        <div class="font-mono text-[11px] text-[var(--color-muted-foreground)]">
-                          Cód: {{ item.codigoPrincipal }} · Cant: {{ item.cantidad }} × {{ item.precioUnitario | currency:'USD' }}
+                @if (cargandoDetalle()) {
+                  <div class="space-y-2 p-3 border border-[var(--color-border)]">
+                    <ui-skeleton width="70%" height="0.875rem" />
+                    <ui-skeleton width="45%" height="0.75rem" />
+                  </div>
+                } @else {
+                  <div class="border border-[var(--color-border)] divide-y divide-[var(--color-border)]">
+                    @for (item of comp.detalles; track item.id) {
+                      <div class="p-2.5 flex items-center justify-between gap-3">
+                        <div>
+                          <div class="font-medium">{{ item.descripcion }}</div>
+                          <div class="font-mono text-[11px] text-[var(--color-muted-foreground)]">
+                            Cód: {{ item.codigoPrincipal }} · Cant: {{ item.cantidad }} × {{ item.precioUnitario | currency:'USD' }}
+                          </div>
+                        </div>
+                        <div class="font-mono font-semibold tabular-nums">
+                          {{ item.subtotal | currency:'USD' }}
                         </div>
                       </div>
-                      <div class="font-mono font-semibold tabular-nums">
-                        {{ item.subtotal | currency:'USD' }}
+                    } @empty {
+                      <div class="p-3 text-center text-[var(--color-muted-foreground)] font-mono text-[11px]">
+                        Sin líneas de detalle adicionales registradas.
                       </div>
-                    </div>
-                  } @empty {
-                    <div class="p-3 text-center text-[var(--color-muted-foreground)] font-mono text-[11px]">
-                      Sin líneas de detalle adicionales registradas.
-                    </div>
-                  }
-                </div>
+                    }
+                  </div>
+                }
               </div>
 
               <div class="p-3 border border-[var(--color-border)] bg-[var(--color-muted)]/20 space-y-1.5 font-mono">
@@ -379,10 +404,12 @@ import { environment } from '../../../environments/environment';
 export class ComprobantesComponent implements OnInit {
   private readonly sriApi = inject(SriApiService);
   private readonly toast = inject(ToastService);
+  private readonly dialog = inject(DialogService);
 
   readonly comprobantes = signal<Comprobante[]>([]);
   readonly loading = signal<boolean>(true);
   readonly page = signal<number>(1);
+  readonly pageSize = signal<number>(20);
   readonly totalPages = signal<number>(1);
 
   readonly filtroBusqueda = signal<string>('');
@@ -391,6 +418,7 @@ export class ComprobantesComponent implements OnInit {
   readonly filtroFechaDesde = signal<string>('');
 
   readonly drawerOpen = signal<boolean>(false);
+  readonly cargandoDetalle = signal<boolean>(false);
   readonly seleccionado = signal<ComprobanteDetallado | null>(null);
 
   readonly columns: TableColumn[] = [
@@ -416,6 +444,7 @@ export class ComprobantesComponent implements OnInit {
         estado: this.filtroEstado(),
         fechaDesde: this.filtroFechaDesde(),
         page: this.page(),
+        limit: this.pageSize(),
       })
       .subscribe((res) => {
         this.comprobantes.set(res.data);
@@ -444,19 +473,33 @@ export class ComprobantesComponent implements OnInit {
       infoAdicional: [],
       xmlDisponible: true,
     });
+    this.cargandoDetalle.set(true);
     this.drawerOpen.set(true);
     this.sriApi.getComprobanteDetalle(row.claveAcceso, row).subscribe((det) => {
       this.seleccionado.set(det);
+      this.cargandoDetalle.set(false);
     });
   }
 
   verificarEstadoSri(row: Comprobante): void {
     this.sriApi.verificarEnSri(row.claveAcceso).subscribe((res) => {
-      this.toast.success(`Estado en WS SRI: ${res.estado} (Sincronizado: Sí)`);
+      void this.dialog.alert({
+        title: `Respuesta WS SRI · ${res.estado}`,
+        message: `Clave de Acceso: ${row.claveAcceso}\nSincronizado: ${res.sincronizado ? 'Sí' : 'No'}\nDetalle: ${(res.mensajes || ['Comprobante verificado en WS Autorización Offline SRI.']).join(' ')}`,
+        confirmText: 'Entendido',
+      });
     });
   }
 
-  reintentarEnvio(row: Comprobante): void {
+  async reintentarEnvio(row: Comprobante): Promise<void> {
+    const ok = await this.dialog.confirm({
+      title: '¿Reintentar autorización ante el SRI?',
+      message: `Se volverá a firmar y transmitir el comprobante ${row.establecimiento}-${row.puntoEmision}-${row.secuencial} a los Web Services del SRI.`,
+      confirmText: 'Reintentar Envío',
+      cancelText: 'Cancelar',
+    });
+    if (!ok) return;
+
     this.sriApi.reintentarComprobante(row.claveAcceso).subscribe((res) => {
       this.toast.success(res.mensaje || 'Comprobante reenviado al SRI');
       this.aplicarFiltros();

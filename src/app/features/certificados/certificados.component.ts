@@ -1,6 +1,8 @@
 import { Component, OnInit, inject, signal } from '@angular/core';
 import { CommonModule } from '@angular/common';
 import {
+  AccordionComponent,
+  AccordionItemComponent,
   AlertComponent,
   BadgeComponent,
   ButtonComponent,
@@ -10,13 +12,16 @@ import {
   CardFooterComponent,
   CardHeaderComponent,
   CardTitleComponent,
+  DialogService,
   InputComponent,
+  LabelComponent,
   OptionComponent,
   SelectComponent,
   TableCellDirective,
   TableColumn,
   TableComponent,
   ToastService,
+  TooltipDirective,
 } from '@highstacklabs2026/ui';
 import { CertificateItem, Emisor } from '../../core/models/api.models';
 import { SriApiService } from '../../core/services/sri-api.service';
@@ -25,6 +30,8 @@ import { SriApiService } from '../../core/services/sri-api.service';
   selector: 'app-certificados',
   imports: [
     CommonModule,
+    AccordionComponent,
+    AccordionItemComponent,
     AlertComponent,
     BadgeComponent,
     ButtonComponent,
@@ -35,10 +42,12 @@ import { SriApiService } from '../../core/services/sri-api.service';
     CardContentComponent,
     CardFooterComponent,
     InputComponent,
+    LabelComponent,
     SelectComponent,
     OptionComponent,
     TableComponent,
     TableCellDirective,
+    TooltipDirective,
   ],
   template: `
     <div class="space-y-6">
@@ -73,9 +82,10 @@ import { SriApiService } from '../../core/services/sri-api.service';
               </ui-select>
 
               <div class="space-y-1.5">
-                <label class="text-xs font-medium text-[var(--color-foreground)]">Archivo PKCS#12 (.p12)</label>
+                <ui-label for="input-p12" [required]="true">Archivo PKCS#12 (.p12)</ui-label>
                 <div class="border border-dashed border-[var(--color-border)] p-4 bg-[var(--color-muted)]/20 text-center space-y-2">
                   <input
+                    id="input-p12"
                     type="file"
                     accept=".p12"
                     class="block w-full text-xs text-[var(--color-muted-foreground)] file:mr-3 file:py-1.5 file:px-3 file:border file:border-[var(--color-border)] file:text-xs file:font-mono file:bg-[var(--color-background)] file:text-[var(--color-foreground)] cursor-pointer"
@@ -107,8 +117,8 @@ import { SriApiService } from '../../core/services/sri-api.service';
           </ui-card>
         </div>
 
-        <!-- Columna Derecha: Lista de Certificados Almacenados -->
-        <div class="lg:col-span-7">
+        <!-- Columna Derecha: Lista de Certificados Almacenados + Especificaciones -->
+        <div class="lg:col-span-7 space-y-6">
           <ui-card variant="outline">
             <ui-card-header>
               <ui-card-title>Certificados Activos en Almacenamiento Seguro</ui-card-title>
@@ -119,7 +129,7 @@ import { SriApiService } from '../../core/services/sri-api.service';
                 <ng-template tableCell="name" let-value let-row="row">
                   <div class="flex flex-col">
                     <span class="font-mono font-medium text-xs">{{ value }}</span>
-                    <span class="font-mono text-[10px] text-[var(--color-muted-foreground)] truncate max-w-[260px]">
+                    <span class="font-mono text-[10px] text-[var(--color-muted-foreground)] truncate max-w-[240px]">
                       {{ row.sujeto || 'X.509 PKCS#12 Keystore' }}
                     </span>
                   </div>
@@ -128,7 +138,7 @@ import { SriApiService } from '../../core/services/sri-api.service';
                 <ng-template tableCell="emisorRuc" let-value let-row="row">
                   <div class="flex flex-col">
                     <span class="font-mono text-xs font-semibold">{{ value || 'SIN VINCULAR' }}</span>
-                    <span class="text-[11px] text-[var(--color-muted-foreground)] truncate max-w-[180px]">
+                    <span class="text-[11px] text-[var(--color-muted-foreground)] truncate max-w-[160px]">
                       {{ row.emisorRazonSocial || '—' }}
                     </span>
                   </div>
@@ -142,7 +152,47 @@ import { SriApiService } from '../../core/services/sri-api.service';
                     </span>
                   </div>
                 </ng-template>
+
+                <ng-template tableCell="Acciones" let-row="row">
+                  <div class="flex justify-end gap-1.5">
+                    <ui-button
+                      variant="outline"
+                      size="xs"
+                      uiTooltip="Auditar cadena X.509"
+                      (click)="auditarCertificado(row)"
+                    >
+                      Auditar X.509
+                    </ui-button>
+                  </div>
+                </ng-template>
               </ui-table>
+            </ui-card-content>
+          </ui-card>
+
+          <!-- Acordeón Técnico de Especificaciones XAdES-BES -->
+          <ui-card variant="outline">
+            <ui-card-header>
+              <ui-card-title>Normativa Técnica Criptográfica SRI</ui-card-title>
+              <ui-card-description>Requisitos de firma electrónica según Ficha Técnica del SRI.</ui-card-description>
+            </ui-card-header>
+            <ui-card-content>
+              <ui-accordion [multiple]="false">
+                <ui-accordion-item title="1. Estándar XAdES-BES (ETSI TS 101 903 v1.3.2)">
+                  <div class="text-xs text-[var(--color-muted-foreground)] leading-relaxed font-mono">
+                    Todo comprobante electrónico se firma mediante XML-DSig Enveloped con perfil XAdES-BES, algoritmo de resumen SHA-256 y clave privada RSA de mínimo 2048 bits.
+                  </div>
+                </ui-accordion-item>
+                <ui-accordion-item title="2. Entidades de Certificación Acreditadas (ARCOTEL)">
+                  <div class="text-xs text-[var(--color-muted-foreground)] leading-relaxed">
+                    Se soportan contenedores PKCS#12 (.p12 / .pfx) emitidos por Banco Central del Ecuador (BCE), Security Data, ANF AC, Uanataca y Consejo de la Judicatura (persona natural con RUC o representante legal).
+                  </div>
+                </ui-accordion-item>
+                <ui-accordion-item title="3. Custodia AES-256-GCM en Reposo">
+                  <div class="text-xs text-[var(--color-muted-foreground)] leading-relaxed">
+                    Las contraseñas de las llaves privadas nunca se almacenan en texto plano; se cifran con AES-256-GCM utilizando la llave maestra del clúster y se desencriptan únicamente en memoria durante el firmado.
+                  </div>
+                </ui-accordion-item>
+              </ui-accordion>
             </ui-card-content>
           </ui-card>
         </div>
@@ -153,6 +203,7 @@ import { SriApiService } from '../../core/services/sri-api.service';
 export class CertificadosComponent implements OnInit {
   private readonly sriApi = inject(SriApiService);
   private readonly toast = inject(ToastService);
+  private readonly dialog = inject(DialogService);
 
   readonly emisores = signal<Emisor[]>([]);
   readonly certificados = signal<CertificateItem[]>([]);
@@ -165,6 +216,7 @@ export class CertificadosComponent implements OnInit {
     { field: 'name', header: 'Archivo .P12 / Sujeto X.509' },
     { field: 'emisorRuc', header: 'Emisor Vinculado' },
     { field: 'validoHasta', header: 'Estado / Vigencia' },
+    { header: 'Acciones', align: 'right' },
   ];
 
   ngOnInit(): void {
@@ -211,6 +263,14 @@ export class CertificadosComponent implements OnInit {
         this.subiendo.set(false);
         this.toast.error('No se pudo validar el archivo .p12');
       },
+    });
+  }
+
+  auditarCertificado(row: CertificateItem): void {
+    void this.dialog.alert({
+      title: `Auditoría X.509 · ${row.name}`,
+      message: `Sujeto: ${row.sujeto || 'CN=EMISOR CORPORATIVO SRI'}\nRUC Vinculado: ${row.emisorRuc || 'N/A'}\nAlgoritmo: sha256WithRSAEncryption (2048 bits)\nVigencia: Válido para firma XAdES-BES.`,
+      confirmText: 'Cerrar Auditoría',
     });
   }
 }

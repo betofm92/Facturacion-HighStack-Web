@@ -10,19 +10,23 @@ import {
   CardTitleComponent,
   CheckboxComponent,
   InputComponent,
+  LabelComponent,
   ModalComponent,
   ModalContentComponent,
   ModalDescriptionComponent,
   ModalFooterComponent,
   ModalHeaderComponent,
   ModalTitleComponent,
-  OptionComponent,
-  SelectComponent,
+  PhoneInputComponent,
+  RadioComponent,
+  RadioGroupComponent,
   TabComponent,
   TableCellDirective,
   TableColumn,
   TableComponent,
   TabsComponent,
+  TextareaComponent,
+  TimezoneSelectComponent,
   ToastService,
 } from '@highstacklabs2026/ui';
 import { Emisor, PuntoEmision, Secuencial } from '../../core/models/api.models';
@@ -41,18 +45,22 @@ import { SriApiService } from '../../core/services/sri-api.service';
     CardContentComponent,
     CheckboxComponent,
     InputComponent,
+    LabelComponent,
     ModalComponent,
     ModalHeaderComponent,
     ModalTitleComponent,
     ModalDescriptionComponent,
     ModalContentComponent,
     ModalFooterComponent,
-    SelectComponent,
-    OptionComponent,
+    PhoneInputComponent,
+    RadioGroupComponent,
+    RadioComponent,
     TabsComponent,
     TabComponent,
     TableComponent,
     TableCellDirective,
+    TextareaComponent,
+    TimezoneSelectComponent,
   ],
   template: `
     <div class="space-y-6">
@@ -213,12 +221,40 @@ import { SriApiService } from '../../core/services/sri-api.service';
             <ui-input label="Número de RUC (13 dígitos)" [(value)]="nuevoRuc" placeholder="1790000000001" [required]="true" />
             <ui-input label="Razón Social" [(value)]="nuevaRazonSocial" placeholder="EMPRESA CORPORATIVA S.A." [required]="true" />
             <ui-input label="Nombre Comercial" [(value)]="nuevoNombreComercial" placeholder="Marca Comercial" />
-            <ui-input label="Dirección de Matriz" [(value)]="nuevaDireccion" placeholder="Av. Amazonas y Naciones Unidas, Quito" [required]="true" />
 
-            <ui-select label="Ambiente SRI Inicial" [(value)]="nuevoAmbiente">
-              <ui-option value="1">1 · Pruebas (CELCER)</ui-option>
-              <ui-option value="2">2 · Producción (CEL)</ui-option>
-            </ui-select>
+            <div class="grid grid-cols-1 sm:grid-cols-2 gap-3">
+              <ui-phone-input
+                label="Teléfono Matriz (E.164)"
+                locale="es-EC"
+                defaultCountry="EC"
+                [preferredCountries]="['EC', 'CO', 'PE', 'US']"
+                size="sm"
+                [(value)]="nuevoTelefono"
+              />
+              <ui-timezone-select
+                label="Zona Horaria del Emisor"
+                size="sm"
+                modalTitle="Zona Horaria del Emisor"
+                [(value)]="nuevaZonaHoraria"
+              />
+            </div>
+
+            <ui-textarea
+              label="Dirección de Matriz"
+              [rows]="2"
+              [autoGrow]="true"
+              [(value)]="nuevaDireccion"
+              placeholder="Av. Amazonas y Naciones Unidas, Quito"
+              [required]="true"
+            />
+
+            <div class="space-y-1.5">
+              <ui-label [required]="true">Ambiente SRI Inicial</ui-label>
+              <ui-radio-group [(value)]="nuevoAmbiente" appearance="card" orientation="horizontal" size="sm">
+                <ui-radio value="1" label="1 · Pruebas" description="Nodo CELCER SRI" />
+                <ui-radio value="2" label="2 · Producción" description="Nodo CEL SRI" />
+              </ui-radio-group>
+            </div>
 
             <div class="pt-2 space-y-2">
               <ui-checkbox label="Obligado a llevar contabilidad" [(checked)]="nuevoObligado" />
@@ -249,6 +285,8 @@ export class EmisoresComponent implements OnInit {
   readonly nuevoRuc = signal<string>('');
   readonly nuevaRazonSocial = signal<string>('');
   readonly nuevoNombreComercial = signal<string>('');
+  readonly nuevoTelefono = signal<string>('+593991234567');
+  readonly nuevaZonaHoraria = signal<string>('America/Guayaquil');
   readonly nuevaDireccion = signal<string>('');
   readonly nuevoAmbiente = signal<string>('1');
   readonly nuevoObligado = signal<boolean>(true);

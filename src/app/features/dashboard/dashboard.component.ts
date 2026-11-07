@@ -4,6 +4,7 @@ import { RouterLink } from '@angular/router';
 import {
   BadgeComponent,
   ButtonComponent,
+  CalendarComponent,
   CardComponent,
   CardContentComponent,
   CardDescriptionComponent,
@@ -15,12 +16,16 @@ import {
   DrawerFooterComponent,
   DrawerHeaderComponent,
   DrawerTitleComponent,
+  PopoverComponent,
+  PopoverTriggerDirective,
   ProgressComponent,
   SeparatorComponent,
+  SkeletonComponent,
   TableCellDirective,
   TableColumn,
   TableComponent,
   ToastService,
+  TooltipDirective,
 } from '@highstacklabs2026/ui';
 import { Comprobante, ComprobanteDetallado, Emisor } from '../../core/models/api.models';
 import { SriApiService } from '../../core/services/sri-api.service';
@@ -33,6 +38,7 @@ import { environment } from '../../../environments/environment';
     RouterLink,
     BadgeComponent,
     ButtonComponent,
+    CalendarComponent,
     CardComponent,
     CardHeaderComponent,
     CardTitleComponent,
@@ -44,10 +50,14 @@ import { environment } from '../../../environments/environment';
     DrawerDescriptionComponent,
     DrawerContentComponent,
     DrawerFooterComponent,
+    PopoverComponent,
+    PopoverTriggerDirective,
     ProgressComponent,
     SeparatorComponent,
+    SkeletonComponent,
     TableComponent,
     TableCellDirective,
+    TooltipDirective,
   ],
   template: `
     <div class="space-y-6">
@@ -64,7 +74,31 @@ import { environment } from '../../../environments/environment';
         </div>
 
         <div class="flex items-center gap-2.5">
-          <ui-button variant="outline" size="sm" [loading]="syncing()" (click)="sincronizarSri()">
+          <!-- Popover con Calendario de Corte Fiscal -->
+          <ui-popover side="bottom" align="end">
+            <ui-button
+              uiPopoverTrigger
+              variant="outline"
+              size="sm"
+              uiTooltip="Seleccionar fecha de corte fiscal"
+            >
+              Corte Fiscal: {{ fechaCorte() || 'Hoy' }}
+            </ui-button>
+            <div class="space-y-2">
+              <div class="text-xs font-mono uppercase text-[var(--color-muted-foreground)] px-1">
+                Calendario Fiscal SRI
+              </div>
+              <ui-calendar [(value)]="fechaCorte" locale="es-EC" />
+            </div>
+          </ui-popover>
+
+          <ui-button
+            variant="outline"
+            size="sm"
+            [loading]="syncing()"
+            uiTooltip="Consultar y autorizar comprobantes pendientes en WS SRI"
+            (click)="sincronizarSri()"
+          >
             Sincronizar Pendientes SRI
           </ui-button>
           <a routerLink="/emitir">
@@ -336,25 +370,32 @@ import { environment } from '../../../environments/environment';
                 <div class="font-mono text-[11px] uppercase text-[var(--color-muted-foreground)]">
                   Líneas de Detalle ({{ comp.detalles.length }})
                 </div>
-                <div class="border border-[var(--color-border)] divide-y divide-[var(--color-border)]">
-                  @for (item of comp.detalles; track item.id) {
-                    <div class="p-2.5 flex items-center justify-between gap-3">
-                      <div>
-                        <div class="font-medium">{{ item.descripcion }}</div>
-                        <div class="font-mono text-[11px] text-[var(--color-muted-foreground)]">
-                          Cód: {{ item.codigoPrincipal }} · Cant: {{ item.cantidad }} × {{ item.precioUnitario | currency:'USD' }}
+                @if (cargandoDetalle()) {
+                  <div class="space-y-2 p-3 border border-[var(--color-border)]">
+                    <ui-skeleton width="70%" height="0.875rem" />
+                    <ui-skeleton width="45%" height="0.75rem" />
+                  </div>
+                } @else {
+                  <div class="border border-[var(--color-border)] divide-y divide-[var(--color-border)]">
+                    @for (item of comp.detalles; track item.id) {
+                      <div class="p-2.5 flex items-center justify-between gap-3">
+                        <div>
+                          <div class="font-medium">{{ item.descripcion }}</div>
+                          <div class="font-mono text-[11px] text-[var(--color-muted-foreground)]">
+                            Cód: {{ item.codigoPrincipal }} · Cant: {{ item.cantidad }} × {{ item.precioUnitario | currency:'USD' }}
+                          </div>
+                        </div>
+                        <div class="font-mono font-semibold tabular-nums">
+                          {{ item.subtotal | currency:'USD' }}
                         </div>
                       </div>
-                      <div class="font-mono font-semibold tabular-nums">
-                        {{ item.subtotal | currency:'USD' }}
+                    } @empty {
+                      <div class="p-3 text-center text-[var(--color-muted-foreground)] font-mono text-[11px]">
+                        Sin líneas de detalle adicionales registradas.
                       </div>
-                    </div>
-                  } @empty {
-                    <div class="p-3 text-center text-[var(--color-muted-foreground)] font-mono text-[11px]">
-                      Sin líneas de detalle adicionales registradas.
-                    </div>
-                  }
-                </div>
+                    }
+                  </div>
+                }
               </div>
 
               <div class="p-3 border border-[var(--color-border)] bg-[var(--color-muted)]/20 space-y-1.5 font-mono">
@@ -411,8 +452,10 @@ export class DashboardComponent implements OnInit {
   readonly emisores = signal<Emisor[]>([]);
   readonly loading = signal<boolean>(true);
   readonly syncing = signal<boolean>(false);
+  readonly fechaCorte = signal<string>('2026-11-06');
 
   readonly drawerOpen = signal<boolean>(false);
+  readonly cargandoDetalle = signal<boolean>(false);
   readonly seleccionado = signal<ComprobanteDetallado | null>(null);
 
   readonly columns: TableColumn[] = [
@@ -489,9 +532,11 @@ export class DashboardComponent implements OnInit {
       infoAdicional: [],
       xmlDisponible: true,
     });
+    this.cargandoDetalle.set(true);
     this.drawerOpen.set(true);
     this.sriApi.getComprobanteDetalle(row.claveAcceso, row).subscribe((det) => {
       this.seleccionado.set(det);
+      this.cargandoDetalle.set(false);
     });
   }
 

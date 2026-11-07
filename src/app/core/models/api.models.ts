@@ -155,3 +155,30 @@ export interface SriVerifyResponse {
   sincronizado: boolean;
 }
 
+export interface ConsultaContribuyenteResponse {
+  identificacion: string;
+  tipoIdentificacion: '04' | '05' | '06' | '07';
+  formatoValido: boolean;
+  errorValidacion?: string;
+  existeEnSri: boolean;
+  estadoContribuyente?: string;
+  razonSocial?: string;
+  nombreComercial?: string;
+  direccionMatriz?: string;
+  tipoContribuyente?: string;
+  regimen?: string;
+  obligadoContabilidad?: 'SI' | 'NO';
+  agenteRetencion?: string;
+  contribuyenteEspecial?: string;
+  actividadEconomica?: string;
+  emailSugerido?: string;
+  telefonoSugerido?: string;
+  fuente:
+    | 'SRI_CATASTRO'
+    | 'BD_LOCAL'
+    | 'VALIDADOR_ALGORITMICO'
+    | 'SRI_CONSUMIDOR_FINAL';
+  mensaje?: string;
+}
+
+
